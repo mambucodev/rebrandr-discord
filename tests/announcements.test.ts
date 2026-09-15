@@ -65,8 +65,11 @@ describe("Announcement Embeds & Action Rows", () => {
     const embed = createProposalEmbed(dummyProposal, 4);
     const data = embed.toJSON();
     expect(data.title).toContain("Proposal #1");
-    expect(data.description).toContain("Cyberpunk Server");
-    expect(data.fields?.some((f) => f.value.includes("3") && f.value.includes("Up"))).toBe(true);
+    expect(data.title).toContain("Cyberpunk Server");
+    expect(data.fields).toBeUndefined();
+    expect(data.description).toContain("Status:");
+    expect(data.description).toContain("Voting:");
+    expect(data.description).toContain("3");
     expect(data.thumbnail?.url).toBe("https://example.com/icon.png");
 
     const row = createProposalActionRow(dummyProposal, 4);

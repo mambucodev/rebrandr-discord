@@ -613,6 +613,17 @@ export class RebrandDatabase {
     return this.getProposal(id);
   }
 
+  public getAllProposals(guildId: string): ProposalWithVotes[] {
+    const rows = this.db.query(
+      "SELECT * FROM proposals WHERE guild_id = ? ORDER BY id ASC"
+    ).all(guildId) as Proposal[];
+
+    return rows.map((p) => ({
+      ...p,
+      ...this.getVoteCounts(p.id),
+    }));
+  }
+
   public getProposalsByStatus(guildId: string, status: ProposalStatus): ProposalWithVotes[] {
     const rows = this.db.query(
       "SELECT * FROM proposals WHERE guild_id = ? AND status = ? ORDER BY id ASC"

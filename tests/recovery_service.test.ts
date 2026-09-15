@@ -218,4 +218,85 @@ describe("RecoveryService retroactive synchronization", () => {
     const updated = db.getProposal(proposal.id);
     expect(updated?.upvotes_count).toBe(3);
   });
+
+  it("retroactively updates existing proposal cards to the new embed styling on restart", async () => {
+    const guildId = "guild-recov-retro";
+    db.updateGuildSettings(guildId, {
+      forum_channel_id: "forum-recov-retro",
+      rebrand_tag_id: "tag-rebrand-retro",
+      min_upvotes: 4,
+    });
+
+    const proposal = db.createProposal({
+      guildId,
+      userId: "creator-retro",
+      name: "Clean Minimalist Rebrand",
+      threadId: "thread-retro-1",
+    });
+    db.updateProposalMessage(proposal.id, "msg-card-retro-1", "thread-retro-1", "thread-retro-1");
+
+    let editedEmbed: any = null;
+    const mockCardMsg: any = {
+      id: "msg-card-retro-1",
+      pinned: true,
+      edit: async ({ embeds }: any) => {
+        editedEmbed = embeds[0]?.toJSON();
+      },
+    };
+
+    let mockGuild: any;
+    const mockThread: any = {
+      id: "thread-retro-1",
+      ownerId: "creator-retro",
+      guild: null as any,
+      appliedTags: ["tag-rebrand-retro"],
+      messages: {
+        fetch: async (msgId: string) => {
+          if (msgId === "msg-card-retro-1") return mockCardMsg;
+          return null;
+        },
+      },
+      reactions: { cache: new Map() },
+    };
+
+    const mockForum: any = {
+      id: "forum-recov-retro",
+      type: ChannelType.GuildForum,
+      threads: {
+        fetchActive: async () => ({
+          threads: new Map([["thread-retro-1", mockThread]]),
+        }),
+        fetchArchived: async () => ({
+          threads: new Map(),
+        }),
+      },
+    };
+
+    mockGuild = {
+      ownerId: "owner-retro",
+      id: guildId,
+      name: "Retro Guild",
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "forum-recov-retro") return mockForum;
+          if (id === "thread-retro-1") return mockThread;
+          return null;
+        },
+      },
+    };
+
+    mockThread.guild = mockGuild;
+    mockThread.name = "Clean Minimalist Rebrand";
+    await recoveryService.syncGuild(mockGuild, db);
+
+    expect(editedEmbed).not.toBeNull();
+    // Embed fields must be completely removed
+    expect(editedEmbed.fields).toBeUndefined();
+    // Title and description match clean formatting
+    expect(editedEmbed.title).toBe(`Proposal #${proposal.id} — Clean Minimalist Rebrand`);
+    expect(editedEmbed.description).toContain("**Status:** Needs Icon");
+    expect(editedEmbed.description).toContain("• **Creator:** <@creator-retro>");
+    expect(editedEmbed.description).toContain("• **Icon:** Not Uploaded");
+    expect(editedEmbed.description).toContain("• **Voting:**");
+  });
 });

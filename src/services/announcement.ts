@@ -54,76 +54,63 @@ export function createProposalEmbed(proposal: ProposalWithVotes, minUpvotes: num
   const hasIcon = Boolean(proposal.icon_url || proposal.icon_path);
   const isReady = proposal.is_ready === 1 && hasIcon;
 
-  // Expressive color palette depending on proposal state
   let statusColor = 0x5865f2; // Blurple default
-  let statusBadge = "🔵 **Voting Active**";
+  let statusText = "Voting Active";
 
   if (proposal.status === "active") {
-    statusColor = 0xff73fa; // Electric Magenta
-    statusBadge = "🟣 **LIVE THIS WEEKEND**";
+    statusColor = 0xff73fa;
+    statusText = "Live This Weekend";
   } else if (proposal.status === "approved") {
-    statusColor = 0x57f287; // Emerald Green
-    statusBadge = `🟢 **Approved & Scheduled**`;
+    statusColor = 0x57f287;
+    statusText = "Approved & Scheduled";
   } else if (proposal.status === "rejected") {
-    statusColor = 0xed4245; // Coral Red
-    statusBadge = "🔴 **Declined**";
+    statusColor = 0xed4245;
+    statusText = "Declined";
   } else if (proposal.status === "cancelled") {
-    statusColor = 0x95a5a6; // Slate Grey
-    statusBadge = "⚪ **Cancelled (Untagged)**";
+    statusColor = 0x95a5a6;
+    statusText = "Cancelled";
   } else if (!isReady) {
-    statusColor = 0xfee75c; // Amber Gold
-    statusBadge = "🟡 **Needs Icon Upload**";
+    statusColor = 0xfee75c;
+    statusText = "Needs Icon";
   } else if (proposal.upvotes_count >= minUpvotes) {
-    statusColor = 0x2ecc71; // Mint Green
-    statusBadge = "⭐ **Goal Reached — Sent to Admins**";
+    statusColor = 0x2ecc71;
+    statusText = "Goal Reached";
   }
 
   const progressBar = createVoteProgressBar(proposal.upvotes_count, minUpvotes);
 
+  const themeText = proposal.topic
+    ? `> ${proposal.topic}`
+    : `> No theme description provided yet. Click "Edit Details" below to add one!`;
+
+  const lines = [
+    `**Status:** ${statusText}`,
+    "",
+    themeText,
+    "",
+    `• **Creator:** <@${proposal.user_id}>`,
+    `• **Icon:** ${hasIcon ? "Uploaded" : "Not Uploaded"}`,
+  ];
+
+  if (proposal.scheduled_date) {
+    lines.push(`• **Target Weekend:** ${formatWeekendDate(proposal.scheduled_date)}`);
+  }
+
+  lines.push(
+    `• **Voting:**`,
+    `⬆️ ${proposal.upvotes_count}   ⬇️ ${proposal.downvotes_count}   (Net: ${proposal.net_votes})`,
+    progressBar
+  );
+
   const embed = new EmbedBuilder()
-    .setAuthor({
-      name: "WEEKEND REBRAND PROPOSAL",
-    })
-    .setTitle(`✨ Proposal #${proposal.id} — ${proposal.name}`)
+    .setTitle(`Proposal #${proposal.id} — ${proposal.name}`)
+    .setDescription(lines.join("\n"))
     .setColor(statusColor)
     .setTimestamp(new Date(proposal.created_at))
     .setFooter({
       text: "React ⬆️ or ⬇️ on the thread starter post to vote • Self-votes excluded",
     });
 
-  // Expressive description with clean blockquote styling
-  const topicText = proposal.topic
-    ? `> 🎭 **Theme & Vision**\n> *${proposal.topic}*`
-    : `> 🎭 **Theme & Vision**\n> *No theme description provided yet. Click "Edit Details" below to add one!*`;
-
-  embed.setDescription(
-    `${topicText}\n\n**Proposed Server Name:** \`${proposal.name}\``
-  );
-
-  embed.addFields(
-    { name: "👑 Creator", value: `<@${proposal.user_id}>`, inline: true },
-    { name: "📌 Status", value: statusBadge, inline: true },
-    {
-      name: "🖼️ Server Icon",
-      value: hasIcon ? "✅ Uploaded & Verified" : "⚠️ *Not uploaded yet*",
-      inline: true,
-    },
-    {
-      name: "🗳️ Community Voting",
-      value: `⬆️ **${proposal.upvotes_count}** Upvotes   •   ⬇️ **${proposal.downvotes_count}** Downvotes   •   Net: **${proposal.net_votes}**\n${progressBar}`,
-      inline: false,
-    }
-  );
-
-  if (proposal.scheduled_date) {
-    embed.addFields({
-      name: "📅 Target Weekend",
-      value: `**${formatWeekendDate(proposal.scheduled_date)}**`,
-      inline: true,
-    });
-  }
-
-  // Display the uploaded server icon preview in the top-right corner thumbnail
   if (proposal.icon_url) {
     embed.setThumbnail(proposal.icon_url);
   }
@@ -131,9 +118,6 @@ export function createProposalEmbed(proposal: ProposalWithVotes, minUpvotes: num
   return embed;
 }
 
-/**
- * Clean, well-proportioned interactive buttons for the in-thread proposal card.
- */
 export function createProposalActionRow(
   proposal: ProposalWithVotes,
   minUpvotes: number
@@ -141,20 +125,17 @@ export function createProposalActionRow(
   const uploadBtn = new ButtonBuilder()
     .setCustomId(`rebrand_upload_icon:${proposal.id}`)
     .setLabel(proposal.icon_url ? "Change Icon" : "Upload Icon")
-    .setStyle(proposal.icon_url ? ButtonStyle.Secondary : ButtonStyle.Primary)
-    .setEmoji("📸");
+    .setStyle(proposal.icon_url ? ButtonStyle.Secondary : ButtonStyle.Primary);
 
   const editBtn = new ButtonBuilder()
     .setCustomId(`rebrand_open_modal:${proposal.id}`)
     .setLabel("Edit Details")
-    .setStyle(ButtonStyle.Secondary)
-    .setEmoji("📝");
+    .setStyle(ButtonStyle.Secondary);
 
   const suggestBtn = new ButtonBuilder()
     .setCustomId(`rebrand_suggest_modal:${proposal.id}`)
     .setLabel("Suggest Asset")
-    .setStyle(ButtonStyle.Secondary)
-    .setEmoji("💡");
+    .setStyle(ButtonStyle.Secondary);
 
   return new ActionRowBuilder<ButtonBuilder>().addComponents(uploadBtn, editBtn, suggestBtn);
 }

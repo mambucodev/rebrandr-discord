@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import { database, RebrandDatabase } from "../database";
 import { syncThreadProposal } from "../handlers/threadHandler";
+import { createProposalEmbed, createProposalActionRow } from "./announcement";
 
 export interface RecoverySyncReport {
   threadsProcessed: number;
@@ -47,9 +48,13 @@ export class RecoveryService {
         const activeResult = await forum.threads.fetchActive().catch(() => null);
         const threadsToProcess: ThreadChannel[] = [];
 
+        const statusTags = new Set(
+          [settings.rebrand_tag_id, settings.approved_tag_id, settings.declined_tag_id].filter(Boolean) as string[]
+        );
+
         if (activeResult?.threads) {
           for (const [, thread] of activeResult.threads) {
-            if (thread.appliedTags.includes(settings.rebrand_tag_id)) {
+            if (thread.appliedTags && thread.appliedTags.some((tag) => statusTags.has(tag))) {
               threadsToProcess.push(thread);
             }
           }
@@ -59,7 +64,8 @@ export class RecoveryService {
         if (archivedResult?.threads) {
           for (const [, thread] of archivedResult.threads) {
             if (
-              thread.appliedTags.includes(settings.rebrand_tag_id) &&
+              thread.appliedTags &&
+              thread.appliedTags.some((tag) => statusTags.has(tag)) &&
               !activeResult?.threads.has(thread.id)
             ) {
               threadsToProcess.push(thread);
@@ -123,6 +129,33 @@ export class RecoveryService {
         if (res.notified) report.adminLogsNotified++;
       } catch (err) {
         console.error(`[Recovery] Error syncing pending thread ${thread.id}:`, err);
+      }
+    }
+
+    // 3. Retroactively update all remaining proposals across this guild to the new embed styling
+    const allProposals = db.getAllProposals ? db.getAllProposals(guild.id) : [];
+    for (const proposal of allProposals) {
+      if (!proposal.thread_id || processedThreadIds.has(proposal.thread_id)) {
+        continue;
+      }
+
+      try {
+        const thread = (await guild.channels.fetch(proposal.thread_id).catch(() => null)) as ThreadChannel | null;
+        if (!thread) continue;
+        processedThreadIds.add(thread.id);
+
+        if (proposal.message_id) {
+          const cardMsg = await thread.messages.fetch(proposal.message_id).catch(() => null);
+          if (cardMsg && typeof cardMsg.edit === "function") {
+            const embed = createProposalEmbed(proposal, settings.min_upvotes);
+            const row = createProposalActionRow(proposal, settings.min_upvotes);
+            const components = proposal.status === "cancelled" ? [] : [row];
+            await cardMsg.edit({ embeds: [embed], components }).catch(() => null);
+            console.log(`[Recovery] Retroactively updated card message for proposal #${proposal.id} in thread ${thread.id}`);
+          }
+        }
+      } catch (err) {
+        console.error(`[Recovery] Error updating proposal #${proposal.id} card:`, err);
       }
     }
 
