@@ -81,7 +81,7 @@ export class RebrandDatabase {
     }
     this.db = new Database(dbPath);
     this.initSchema();
-    this.autoSeedIfEmpty();
+    this.normalizeIconPaths();
   }
 
   private initSchema(): void {
@@ -692,67 +692,26 @@ export class RebrandDatabase {
     return candidate;
   }
 
-  public autoSeedIfEmpty(forceSeed: boolean = false): void {
-    if (!forceSeed && this.dbPath !== config.dbPath) {
-      return;
-    }
-
+  public normalizeIconPaths(): void {
     try {
-      const proposalCount = (this.db.query("SELECT count(*) as c FROM proposals").get() as any)?.c || 0;
-      if (proposalCount > 0) {
-        return;
+      const proposalsWithIcons = this.db.query("SELECT id, icon_path FROM proposals WHERE icon_path IS NOT NULL").all() as any[];
+      for (const p of proposalsWithIcons) {
+        const filename = path.basename(p.icon_path);
+        const newPath = path.join(config.iconsDir, filename);
+        if (p.icon_path !== newPath) {
+          this.db.run("UPDATE proposals SET icon_path = ? WHERE id = ?", [newPath, p.id]);
+        }
       }
-
-      const seedDbPath = path.resolve(process.cwd(), "seed", "rebrand.sqlite");
-      const seedIconsDir = path.resolve(process.cwd(), "seed", "icons");
-
-      if (fs.existsSync(seedDbPath)) {
-        console.log(`[Database] Empty database detected. Auto-migrating initial data from ${seedDbPath} to ${this.dbPath}...`);
-        this.close();
-        fs.copyFileSync(seedDbPath, this.dbPath);
-        this.db = new Database(this.dbPath);
-        this.db.run("PRAGMA journal_mode = WAL;");
-        this.db.run("PRAGMA foreign_keys = ON;");
-        this.initSchema();
-        console.log("[Database] Database auto-migrated successfully with proposals and guild settings.");
-      }
-
-      if (fs.existsSync(seedIconsDir)) {
-        if (!fs.existsSync(config.iconsDir)) {
-          fs.mkdirSync(config.iconsDir, { recursive: true });
+      const settingsWithIcons = this.db.query("SELECT guild_id, default_icon_path FROM guild_settings WHERE default_icon_path IS NOT NULL").all() as any[];
+      for (const s of settingsWithIcons) {
+        const filename = path.basename(s.default_icon_path);
+        const newPath = path.join(config.iconsDir, filename);
+        if (s.default_icon_path !== newPath) {
+          this.db.run("UPDATE guild_settings SET default_icon_path = ? WHERE guild_id = ?", [newPath, s.guild_id]);
         }
-        for (const file of fs.readdirSync(seedIconsDir)) {
-          const dest = path.join(config.iconsDir, file);
-          if (!fs.existsSync(dest)) {
-            fs.copyFileSync(path.join(seedIconsDir, file), dest);
-          }
-        }
-        console.log("[Database] Cached icons restored from seed directory.");
-      }
-
-      // Normalize icon paths to current config.iconsDir
-      try {
-        const proposalsWithIcons = this.db.query("SELECT id, icon_path FROM proposals WHERE icon_path IS NOT NULL").all() as any[];
-        for (const p of proposalsWithIcons) {
-          const filename = path.basename(p.icon_path);
-          const newPath = path.join(config.iconsDir, filename);
-          if (p.icon_path !== newPath) {
-            this.db.run("UPDATE proposals SET icon_path = ? WHERE id = ?", [newPath, p.id]);
-          }
-        }
-        const settingsWithIcons = this.db.query("SELECT guild_id, default_icon_path FROM guild_settings WHERE default_icon_path IS NOT NULL").all() as any[];
-        for (const s of settingsWithIcons) {
-          const filename = path.basename(s.default_icon_path);
-          const newPath = path.join(config.iconsDir, filename);
-          if (s.default_icon_path !== newPath) {
-            this.db.run("UPDATE guild_settings SET default_icon_path = ? WHERE guild_id = ?", [newPath, s.guild_id]);
-          }
-        }
-      } catch (err) {
-        console.warn("[Database] Warning updating icon paths:", err);
       }
     } catch (err) {
-      console.warn("[Database] Auto-seeding check error:", err);
+      // Ignored if tables do not exist yet during initial setup
     }
   }
 

@@ -8,6 +8,3 @@ data/
 *.sqlite-shm
 *.log
 .DS_Store
-
-!seed/
-!seed/**
