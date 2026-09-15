@@ -52,17 +52,15 @@ export async function registerCommands(
       });
       console.log("[Commands] Successfully registered application commands globally!");
 
-      // Also register to currently connected guilds for immediate local availability
-      if (client.guilds.cache.size > 0) {
-        for (const [gId, guild] of client.guilds.cache) {
-          try {
-            await rest.put(Routes.applicationGuildCommands(client.user.id, gId), {
-              body: commandData,
-            });
-            console.log(`[Commands] Instant-registered commands to guild "${guild.name}" (${gId})`);
-          } catch (gErr) {
-            console.warn(`[Commands] Could not instant-register to guild ${gId}:`, gErr);
-          }
+      // Clear any guild-specific commands so they don't duplicate global commands in Discord's menu
+      for (const [gId, guild] of client.guilds.cache) {
+        try {
+          await rest.put(Routes.applicationGuildCommands(client.user.id, gId), {
+            body: [],
+          });
+          console.log(`[Commands] Cleaned up duplicate guild-level commands for "${guild.name}" (${gId})`);
+        } catch (gErr) {
+          // Ignored if permissions don't allow or already clear
         }
       }
     }
