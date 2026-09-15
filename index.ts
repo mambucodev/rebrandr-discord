@@ -60,6 +60,13 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error("[Bot] Error during startup recovery sync:", err);
   }
 
+  // Synchronize server-wide nickname and profile picture to match server
+  for (const [, guild] of readyClient.guilds.cache) {
+    await rebrandService.syncBotBranding(guild).catch((err) => {
+      console.warn(`[Bot] Could not sync branding for guild "${guild.name}":`, err);
+    });
+  }
+
   scheduler.start(readyClient);
 });
 
@@ -87,8 +94,16 @@ client.on(Events.MessageReactionRemove, async (reaction, user) => {
   await handleReactionEvent(reaction, user);
 });
 
-client.on(Events.GuildCreate, (guild) => {
+client.on(Events.GuildCreate, async (guild) => {
   console.log(`[Bot] Joined new guild: "${guild.name}" (ID: ${guild.id})`);
+  await rebrandService.syncBotBranding(guild).catch(() => null);
+});
+
+client.on(Events.GuildUpdate, async (oldGuild, newGuild) => {
+  if (oldGuild.name !== newGuild.name || oldGuild.icon !== newGuild.icon) {
+    console.log(`[Bot] Guild "${newGuild.name}" updated name/icon. Syncing bot branding...`);
+    await rebrandService.syncBotBranding(newGuild).catch(() => null);
+  }
 });
 
 client.on(Events.GuildDelete, (guild) => {

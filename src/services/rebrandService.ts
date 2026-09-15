@@ -133,6 +133,7 @@ export class RebrandService {
       (database as any).db?.run("UPDATE proposals SET status = 'active' WHERE id = ?", [proposal.id]);
 
       await this.sendAdminLog(guild, createRebrandLiveEmbed(proposal, guild));
+      await this.syncBotBranding(guild, proposal.name, iconBuffer).catch(() => null);
       return true;
     } catch (err) {
       console.error(`[RebrandService] Fatal error applying rebrand:`, err);
@@ -187,6 +188,11 @@ export class RebrandService {
       }
       database.updateGuildSettings(guild.id, { active_proposal_id: null });
 
+      let revertIconBuf: Buffer | null = null;
+      if (settings.default_icon_path && fs.existsSync(settings.default_icon_path)) {
+        try { revertIconBuf = fs.readFileSync(settings.default_icon_path); } catch {} 
+      }
+      await this.syncBotBranding(guild, settings.default_name || guild.name, revertIconBuf).catch(() => null);
       await this.sendAdminLog(guild, createRebrandConcludedEmbed(activeProposal, guild));
       return true;
     } catch (err) {
@@ -221,6 +227,81 @@ export class RebrandService {
       console.log(`[RebrandService] No admin logs channel configured for guild "${guild.name}"`);
     }
     return null;
+  }
+
+  /**
+   * Synchronizes the bot's server-wide nickname to "<server name> Rebrandr"
+   * and updates its profile picture (pfp) to match the server's current icon.
+   */
+  public async syncBotBranding(
+    guild: Guild,
+    overrideName?: string,
+    overrideIconBuffer?: Buffer | null
+  ): Promise<void> {
+    const baseName = overrideName || guild.name;
+    const suffix = " Rebrandr";
+    const maxBaseLen = 32 - suffix.length; // 23 characters max to respect Discord's 32-char limit
+    const cleanBase = baseName.length > maxBaseLen ? baseName.slice(0, maxBaseLen).trim() : baseName;
+    const targetNickname = `${cleanBase}${suffix}`;
+
+    // 1. Sync server-wide nickname
+    try {
+      const me = guild.members.me || (await guild.members.fetchMe().catch(() => null));
+      if (me && me.nickname !== targetNickname) {
+        if (typeof (guild.members as any).editMe === "function") {
+          await (guild.members as any).editMe({ nick: targetNickname, reason: "Sync server-wide bot nickname" });
+        } else if (typeof me.setNickname === "function") {
+          await me.setNickname(targetNickname, "Sync server-wide bot nickname");
+        }
+        console.log(`[BotBranding] Updated nickname in guild "${guild.name}" to "${targetNickname}"`);
+      }
+    } catch (nickErr) {
+      console.warn(`[BotBranding] Could not update nickname in "${guild.name}":`, nickErr);
+    }
+
+    // 2. Sync profile picture (PFP) to match the server's icon
+    try {
+      let iconBuf: Buffer | null = overrideIconBuffer || null;
+
+      if (!iconBuf) {
+        const iconUrl = guild.iconURL({ extension: "png", size: 1024 });
+        if (iconUrl) {
+          try {
+            const res = await this.downloadAndCacheImage(iconUrl, `pfp_${guild.id}`);
+            iconBuf = res.buffer;
+          } catch (dlErr) {
+            console.warn(`[BotBranding] Failed downloading guild icon for pfp:`, dlErr);
+          }
+        }
+      }
+
+      if (iconBuf) {
+        let serverAvatarUpdated = false;
+        // Attempt server-specific member avatar first
+        if (typeof (guild.members as any).editMe === "function") {
+          try {
+            await (guild.members as any).editMe({ avatar: iconBuf, reason: "Sync bot pfp to server icon" });
+            serverAvatarUpdated = true;
+            console.log(`[BotBranding] Updated server avatar in guild "${guild.name}" to match server icon`);
+          } catch (memberAvatarErr) {
+            // Server-specific avatar requires Boost Level or Nitro; fallback to global user avatar
+            serverAvatarUpdated = false;
+          }
+        }
+
+        // If server-specific avatar not available, update the bot's global avatar
+        if (!serverAvatarUpdated && guild.client.user && typeof guild.client.user.setAvatar === "function") {
+          try {
+            await guild.client.user.setAvatar(iconBuf);
+            console.log(`[BotBranding] Updated bot avatar to match server icon`);
+          } catch (globalAvatarErr) {
+            console.warn(`[BotBranding] Could not update global bot avatar:`, globalAvatarErr);
+          }
+        }
+      }
+    } catch (pfpErr) {
+      console.warn(`[BotBranding] Error syncing bot pfp for "${guild.name}":`, pfpErr);
+    }
   }
 
   public async checkAndNotifyAdminLogs(guild: Guild, proposalId: number): Promise<void> {
