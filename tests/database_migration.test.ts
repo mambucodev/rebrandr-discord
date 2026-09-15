@@ -131,4 +131,18 @@ describe("RebrandDatabase legacy schema migration", () => {
     expect(proposal.is_ready).toBe(0);
     rebrandDb.close();
   });
+  it("auto-seeds from seed/rebrand.sqlite when database has 0 proposals", () => {
+    const seedTestDbPath = path.resolve(process.cwd(), "data", "test-autoseed.sqlite");
+    if (fs.existsSync(seedTestDbPath)) fs.unlinkSync(seedTestDbPath);
+    const freshDb = new RebrandDatabase(seedTestDbPath);
+    expect(freshDb.getAllProposals("1300606629083086878").length).toBe(0);
+
+    freshDb.autoSeedIfEmpty(true);
+    const proposals = freshDb.getAllProposals("1300606629083086878");
+    expect(proposals.length).toBeGreaterThan(0);
+    const settings = freshDb.getGuildSettings("1300606629083086878");
+    expect(settings.forum_channel_id).toBe("1341773745647255683");
+    freshDb.close();
+    if (fs.existsSync(seedTestDbPath)) fs.unlinkSync(seedTestDbPath);
+  });
 });
