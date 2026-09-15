@@ -267,6 +267,21 @@ export async function syncThreadProposal(
     cardMsg = await thread.messages.fetch(proposal.message_id).catch(() => null);
   }
 
+  // Fallback: check pinned messages in the thread if message_id was not recorded or found
+  if (!cardMsg && thread.messages?.fetchPinned) {
+    const pinnedMsgs = await thread.messages.fetchPinned().catch(() => null);
+    if (pinnedMsgs) {
+      const existingBotCard = Array.from(pinnedMsgs.values()).find(
+        (m: any) => m.author?.id === thread.client?.user?.id
+      );
+      if (existingBotCard) {
+        cardMsg = existingBotCard as Message;
+        db.updateProposalMessage(proposal.id, cardMsg.id, thread.id, thread.id);
+        console.log(`[ThreadSync] Recovered existing proposal card ${cardMsg.id} from pinned messages in thread ${thread.id}`);
+      }
+    }
+  }
+
   const embed = createProposalEmbed(proposal, settings.min_upvotes);
   const row = createProposalActionRow(proposal, settings.min_upvotes);
 
@@ -313,7 +328,18 @@ export async function syncThreadProposal(
       console.log(`[ThreadSync] Re-pinned existing proposal card ${cardMsg.id} in thread ${thread.id}`);
     }
     if (typeof cardMsg.edit === "function") {
-      await cardMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
+      const wasArchived = Boolean(thread.archived);
+      if (wasArchived && typeof thread.setArchived === "function") {
+        await thread.setArchived(false).catch(() => null);
+      }
+      const components = proposal.status === "cancelled" ? [] : [row];
+      await cardMsg.edit({ embeds: [embed], components }).catch((err) => {
+        console.error(`[ThreadSync] Failed to edit card in thread ${thread.id}:`, err);
+      });
+      if (wasArchived && typeof thread.setArchived === "function") {
+        await thread.setArchived(true).catch(() => null);
+      }
+      console.log(`[ThreadSync] Retroactively refreshed card for proposal #${proposal.id} in thread ${thread.id}`);
     }
   }
 
