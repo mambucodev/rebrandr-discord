@@ -68,7 +68,7 @@ describe("Announcement Embeds & Action Rows", () => {
     expect(data.title).toContain("Cyberpunk Server");
     expect(data.fields).toBeUndefined();
     expect(data.description).toContain("Status:");
-    expect(data.description).toContain("Voting:");
+    expect(data.description).toContain("Voting");
     expect(data.description).toContain("3");
     expect(data.thumbnail?.url).toBe("https://example.com/icon.png");
 

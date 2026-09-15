@@ -294,9 +294,9 @@ describe("RecoveryService retroactive synchronization", () => {
     expect(editedEmbed.fields).toBeUndefined();
     // Title and description match clean formatting
     expect(editedEmbed.title).toBe(`Proposal #${proposal.id} — Clean Minimalist Rebrand`);
-    expect(editedEmbed.description).toContain("**Status:** Needs Icon");
+    expect(editedEmbed.description).toContain("Status: Needs Icon");
     expect(editedEmbed.description).toContain("• **Creator:** <@creator-retro>");
     expect(editedEmbed.description).toContain("• **Icon:** Not Uploaded");
-    expect(editedEmbed.description).toContain("• **Voting:**");
+    expect(editedEmbed.description).toContain("### Voting");
   });
 });

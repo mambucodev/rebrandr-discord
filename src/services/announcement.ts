@@ -80,14 +80,15 @@ export function createProposalEmbed(proposal: ProposalWithVotes, minUpvotes: num
   const progressBar = createVoteProgressBar(proposal.upvotes_count, minUpvotes);
 
   const themeText = proposal.topic
-    ? `> ${proposal.topic}`
-    : `> No theme description provided yet. Click "Edit Details" below to add one!`;
+    ? `> *${proposal.topic}*`
+    : `> *No theme description provided yet. Click "Edit Details" below to add one!*`;
 
   const lines = [
-    `**Status:** ${statusText}`,
+    `### Status: ${statusText}`,
     "",
     themeText,
     "",
+    "### Details",
     `• **Creator:** <@${proposal.user_id}>`,
     `• **Icon:** ${hasIcon ? "Uploaded" : "Not Uploaded"}`,
   ];
@@ -97,8 +98,10 @@ export function createProposalEmbed(proposal: ProposalWithVotes, minUpvotes: num
   }
 
   lines.push(
-    `• **Voting:**`,
-    `⬆️ ${proposal.upvotes_count}   ⬇️ ${proposal.downvotes_count}   (Net: ${proposal.net_votes})`,
+    "",
+    "### Voting",
+    `⬆️ **${proposal.upvotes_count}**   •   ⬇️ **${proposal.downvotes_count}**   •   Net: **${proposal.net_votes}**`,
+    "",
     progressBar
   );
 
