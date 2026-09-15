@@ -14,6 +14,7 @@ import {
 } from "discord.js";
 import { database } from "../database";
 import { rebrandService } from "../services/rebrandService";
+import { updateThreadStatusTag } from "../handlers/threadHandler";
 import {
   createStatusEmbed,
   createProposalEmbed,
@@ -21,6 +22,7 @@ import {
   createSuccessEmbed,
   createErrorEmbed,
   createInfoEmbed,
+  createForumTagConfigEmbedAndRows,
 } from "../services/announcement";
 import { formatWeekendDate } from "../utils/dateUtils";
 
@@ -31,11 +33,11 @@ export const rebrandAdminCommand = new SlashCommandBuilder()
   .addSubcommand((sub) =>
     sub
       .setName("config")
-      .setDescription("Configure forum channel, tags, admin logs, emojis, and voting thresholds")
+      .setDescription("Configure forum channel, tags, admin logs, and upvote requirements")
       .addChannelOption((opt) =>
         opt
           .setName("forum_channel")
-          .setDescription("The forum channel where rebrand threads are created (Forums only)")
+          .setDescription("Forum channel where rebrand proposals will be posted")
           .addChannelTypes(ChannelType.GuildForum)
           .setRequired(false)
       )
@@ -64,6 +66,18 @@ export const rebrandAdminCommand = new SlashCommandBuilder()
         opt
           .setName("downvote_emojis")
           .setDescription("Custom downvote emojis or IDs (e.g. :hype_down: 💩 separated by spaces or commas)")
+          .setRequired(false)
+      )
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("tags")
+      .setDescription("Configure forum status tags for Rebrand, Approved, and Declined proposals")
+      .addChannelOption((opt) =>
+        opt
+          .setName("forum_channel")
+          .setDescription("Forum channel to configure tags for (leave empty to use currently configured channel)")
+          .addChannelTypes(ChannelType.GuildForum)
           .setRequired(false)
       )
   )
@@ -132,47 +146,39 @@ export const rebrandAdminCommand = new SlashCommandBuilder()
       )
   )
   .addSubcommand((sub) =>
-    sub
-      .setName("apply")
-      .setDescription("Immediately apply a proposal to the server (Manual override)")
-      .addIntegerOption((opt) =>
-        opt.setName("id").setDescription("Proposal ID to apply now").setRequired(true)
-      )
+    sub.setName("schedule").setDescription("View the upcoming rebrand queue and dates")
   )
   .addSubcommand((sub) =>
     sub
-      .setName("revert")
-      .setDescription("Immediately revert server name and icon back to default baseline")
-  )
-  .addSubcommand((sub) =>
-    sub
-      .setName("cancel")
-      .setDescription("Cancel an approved or scheduled proposal")
-      .addIntegerOption((opt) =>
-        opt.setName("id").setDescription("Proposal ID to cancel").setRequired(true)
+      .setName("trigger")
+      .setDescription("Instantly trigger rebrand cycle (for testing or emergency override)")
+      .addStringOption((opt) =>
+        opt
+          .setName("action")
+          .setDescription("Action to trigger")
+          .setRequired(true)
+          .addChoices(
+            { name: "Apply Next Scheduled Rebrand", value: "apply" },
+            { name: "Revert to Baseline Server Default", value: "revert" }
+          )
       )
   );
 
-export function hasAdminPermission(interaction: ChatInputCommandInteraction | ButtonInteraction | any): boolean {
-  if (!interaction.guild) return false;
-  if (interaction.guild.ownerId === interaction.user.id) return true;
-  if (interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) return true;
-  if (interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) return true;
-  return false;
-}
-
-export async function handleRebrandAdminCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+export async function handleRebrandAdminCommand(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
   if (!interaction.guild) {
-    const errorEmbed = createErrorEmbed("Direct Message Not Supported", "This command can only be used inside a Discord server.");
-    await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: "This command can only be used inside a Discord server.",
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 
   if (!hasAdminPermission(interaction)) {
-    console.log(`[Admin] Permission denied for user @${interaction.user.tag} (${interaction.user.id}) in guild "${interaction.guild.name}"`);
     const errorEmbed = createErrorEmbed(
       "Permission Denied",
-      "You need **Administrator** or **Manage Server** permission to use `/rebrand` admin commands."
+      "You need **Administrator** or **Manage Server** permissions to run `/rebrand` admin commands."
     );
     await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
     return;
@@ -201,33 +207,13 @@ export async function handleRebrandAdminCommand(interaction: ChatInputCommandInt
         const availableTags = forumChan.availableTags;
         console.log(`[Admin] Forum channel ${forumChan.name} has ${availableTags.length} available tags.`);
 
+        const updatedSettings = database.updateGuildSettings(guildId, updates);
+
         if (availableTags.length > 0) {
-          database.updateGuildSettings(guildId, updates);
-
-          const selectOptions = availableTags.slice(0, 25).map((t) => ({
-            label: t.name,
-            value: t.id,
-            description: `Use tag "${t.name}" (ID: ${t.id})`,
-            emoji: t.emoji?.name ? { name: t.emoji.name, id: t.emoji.id || undefined } : undefined,
-          }));
-
-          const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId(`rebrand_select_tag:${forumChan.id}`)
-            .setPlaceholder("Select the tag that marks rebrand proposal threads")
-            .addOptions(selectOptions);
-
-          const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
-
-          const configEmbed = new EmbedBuilder()
-            .setTitle("🏷️ Select Rebrand Forum Tag")
-            .setDescription(
-              `Forum channel <#${forumChan.id}> has been set! Now select which tag identifies rebrand proposal threads:`
-            )
-            .setColor(0x5865f2);
-
+          const { embed, rows } = createForumTagConfigEmbedAndRows(forumChan, updatedSettings);
           await interaction.reply({
-            embeds: [configEmbed],
-            components: [row],
+            embeds: [embed],
+            components: rows,
             flags: MessageFlags.Ephemeral,
           });
           return;
@@ -249,7 +235,7 @@ export async function handleRebrandAdminCommand(interaction: ChatInputCommandInt
             inline: true,
           },
           {
-            name: "📫 Forum Channel",
+            name: "📬 Forum Channel",
             value: settings.forum_channel_id ? `<#${settings.forum_channel_id}>` : "*Not set*",
             inline: true,
           },
@@ -259,17 +245,27 @@ export async function handleRebrandAdminCommand(interaction: ChatInputCommandInt
             inline: true,
           },
           {
+            name: "✅ Approved Tag ID",
+            value: settings.approved_tag_id ? `\`${settings.approved_tag_id}\`` : "*Not set*",
+            inline: true,
+          },
+          {
+            name: "❌ Declined Tag ID",
+            value: settings.declined_tag_id ? `\`${settings.declined_tag_id}\`` : "*Not set*",
+            inline: true,
+          },
+          {
             name: "🎯 Required Upvotes",
             value: `**${settings.min_upvotes}**`,
             inline: true,
           },
           {
-            name: "⬆️ Custom Upvote Emojis",
+            name: "⬆️ Upvote Emojis",
             value: settings.custom_upvote_emojis ? `\`${settings.custom_upvote_emojis}\`` : "*Default (⬆️, 👍, 🔺)*",
             inline: true,
           },
           {
-            name: "⬇️ Custom Downvote Emojis",
+            name: "⬇️ Downvote Emojis",
             value: settings.custom_downvote_emojis ? `\`${settings.custom_downvote_emojis}\`` : "*Default (⬇️, 👎, 🔻)*",
             inline: true,
           }
@@ -280,68 +276,126 @@ export async function handleRebrandAdminCommand(interaction: ChatInputCommandInt
       break;
     }
 
+    case "tags": {
+      let forumChan = interaction.options.getChannel("forum_channel") as ForumChannel | null;
+      const settings = database.getGuildSettings(guildId);
+
+      if (!forumChan && settings.forum_channel_id) {
+        forumChan = (await interaction.guild.channels.fetch(settings.forum_channel_id).catch(() => null)) as ForumChannel | null;
+      }
+
+      if (!forumChan) {
+        const errEmbed = createErrorEmbed(
+          "Forum Channel Required",
+          "No forum channel is configured yet. Please specify `forum_channel` or configure it using `/rebrand config`."
+        );
+        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      if (!forumChan.availableTags || forumChan.availableTags.length === 0) {
+        const errEmbed = createErrorEmbed(
+          "No Tags Found",
+          `Forum channel <#${forumChan.id}> has no tags created yet. Please create tags in Discord forum channel settings first.`
+        );
+        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      if (forumChan.id !== settings.forum_channel_id) {
+        database.updateGuildSettings(guildId, { forum_channel_id: forumChan.id });
+      }
+
+      const currentSettings = database.getGuildSettings(guildId);
+      const { embed, rows } = createForumTagConfigEmbedAndRows(forumChan, currentSettings);
+      await interaction.reply({
+        embeds: [embed],
+        components: rows,
+        flags: MessageFlags.Ephemeral,
+      });
+      break;
+    }
+
     case "upload": {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const attachment = interaction.options.getAttachment("icon", true);
-      const specifiedId = interaction.options.getInteger("id");
+      const icon = interaction.options.getAttachment("icon", true);
+      let proposalId = interaction.options.getInteger("id");
       const name = interaction.options.getString("name");
       const topic = interaction.options.getString("topic");
 
-      let proposal = specifiedId ? database.getProposal(specifiedId) : null;
-      if (!proposal && interaction.channel?.isThread()) {
-        proposal = database.getProposalByThreadId(interaction.channel.id);
+      if (!proposalId && interaction.channel?.isThread()) {
+        const threadProposal = database.getProposalByThreadId(interaction.channel.id);
+        if (threadProposal) proposalId = threadProposal.id;
       }
 
-      if (!proposal) {
-        const err = createErrorEmbed(
-          "Proposal Not Found",
-          "Could not determine which proposal to update. Please specify proposal `id` or run inside the proposal forum thread."
+      if (!proposalId) {
+        const errEmbed = createErrorEmbed(
+          "Proposal ID Required",
+          "Specify the `id` option or run this command inside the proposal's forum thread."
         );
-        await interaction.editReply({ embeds: [err] });
+        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
         return;
       }
 
-      let cached;
+      const proposal = database.getProposal(proposalId);
+      if (!proposal || proposal.guild_id !== guildId) {
+        const errEmbed = createErrorEmbed("Not Found", `Proposal **#${proposalId}** does not exist in this server.`);
+        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      const isAuthor = proposal.user_id === interaction.user.id;
+      const isAdmin = hasAdminPermission(interaction);
+
+      if (!isAuthor && !isAdmin) {
+        const errEmbed = createErrorEmbed(
+          "Permission Denied",
+          "Only the proposal author or server administrators can upload icons."
+        );
+        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
       try {
-        cached = await rebrandService.downloadAndCacheImage(attachment.url, `proposal_${guildId}`);
-      } catch (err: any) {
-        const errEmbed = createErrorEmbed("Invalid Image File", err.message || "Failed to validate and save uploaded image.");
-        await interaction.editReply({ embeds: [errEmbed] });
-        return;
-      }
+        const cached = await rebrandService.downloadAndCacheImage(icon.url, `proposal_${guildId}`);
+        const updateData: any = {
+          icon_url: icon.url,
+          icon_path: cached.filePath,
+          is_ready: 1,
+        };
+        if (name) updateData.name = name;
+        if (topic !== null && topic !== undefined) updateData.topic = topic;
 
-      const updates: any = {
-        icon_url: attachment.url,
-        icon_path: cached.filePath,
-        is_ready: 1,
-      };
-      if (name) updates.name = name;
-      if (topic) updates.topic = topic;
+        const updated = database.updateProposalDetails(proposalId, updateData)!;
+        const settings = database.getGuildSettings(guildId);
 
-      const updated = database.updateProposalDetails(proposal.id, updates)!;
-      const settings = database.getGuildSettings(guildId);
-
-      if (updated.thread_id && updated.message_id) {
-        const thread = (await interaction.guild.channels.fetch(updated.thread_id).catch(() => null)) as ThreadChannel | null;
-        if (thread) {
-          const card = await thread.messages.fetch(updated.message_id).catch(() => null);
-          if (card) {
-            await card.edit({
-              embeds: [createProposalEmbed(updated, settings.min_upvotes)],
-              components: [createProposalActionRow(updated, settings.min_upvotes)],
-            }).catch(() => null);
+        if (proposal.thread_id) {
+          const thread = (await interaction.guild.channels.fetch(proposal.thread_id).catch(() => null)) as ThreadChannel | null;
+          if (thread && proposal.message_id) {
+            const cardMsg = await thread.messages.fetch(proposal.message_id).catch(() => null);
+            if (cardMsg) {
+              const cardEmbed = createProposalEmbed(updated, settings.min_upvotes);
+              const cardRow = createProposalActionRow(updated, settings.min_upvotes);
+              await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
+            }
           }
         }
+
+        await rebrandService.checkAndNotifyAdminLogs(interaction.guild, proposal.id);
+
+        const successEmbed = createSuccessEmbed(
+          "🖼️ Server Icon Uploaded & Verified",
+          `Server icon for Proposal **#${proposalId} ("${updated.name}")** updated successfully!`
+        );
+        successEmbed.setThumbnail(icon.url);
+
+        await interaction.editReply({ embeds: [successEmbed] });
+      } catch (err: any) {
+        console.error("[Admin] Icon upload error:", err);
+        const errEmbed = createErrorEmbed("Upload Failed", err.message || "Failed to download and validate the image file.");
+        await interaction.editReply({ embeds: [errEmbed] });
       }
-
-      await rebrandService.checkAndNotifyAdminLogs(interaction.guild, updated.id);
-
-      const success = createSuccessEmbed(
-        "📸 Server Icon Uploaded Successfully",
-        `Proposal **#${updated.id} ("${updated.name}")** updated with the uploaded server icon!`
-      );
-      success.setThumbnail(attachment.url);
-      await interaction.editReply({ embeds: [success] });
       break;
     }
 
@@ -450,6 +504,9 @@ export async function handleRebrandAdminCommand(interaction: ChatInputCommandInt
       if (approved.thread_id) {
         const thread = (await interaction.guild.channels.fetch(approved.thread_id).catch(() => null)) as ThreadChannel | null;
         if (thread) {
+          // Remove rebrand tag and apply Approved tag (only 1 status tag active)
+          await updateThreadStatusTag(thread, "approved", settings);
+
           if (approved.message_id) {
             const cardMsg = await thread.messages.fetch(approved.message_id).catch(() => null);
             if (cardMsg) {
@@ -507,6 +564,9 @@ export async function handleRebrandAdminCommand(interaction: ChatInputCommandInt
       if (rejected?.thread_id) {
         const thread = (await interaction.guild.channels.fetch(rejected.thread_id).catch(() => null)) as ThreadChannel | null;
         if (thread) {
+          // Remove rebrand tag and apply Declined tag (only 1 status tag active)
+          await updateThreadStatusTag(thread, "declined", settings);
+
           if (rejected.message_id) {
             const cardMsg = await thread.messages.fetch(rejected.message_id).catch(() => null);
             if (cardMsg) {
@@ -516,8 +576,8 @@ export async function handleRebrandAdminCommand(interaction: ChatInputCommandInt
             }
           }
           const threadNotice = createErrorEmbed(
-            "❌ Proposal Declined",
-            `This rebrand proposal was declined by server administrators.\nReason: *${reason}*`
+            "❌ Rebrand Rejected",
+            `This proposal was rejected by <@${interaction.user.id}>.\nReason: *${reason}*`
           );
           await thread.send({ embeds: [threadNotice] }).catch(() => null);
         }
@@ -527,73 +587,36 @@ export async function handleRebrandAdminCommand(interaction: ChatInputCommandInt
       break;
     }
 
-    case "apply": {
-      const proposalId = interaction.options.getInteger("id", true);
-      const proposal = database.getProposal(proposalId);
-
-      if (!proposal || proposal.guild_id !== guildId) {
-        const errEmbed = createErrorEmbed("Not Found", `Proposal **#${proposalId}** does not exist.`);
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
-        return;
-      }
-
-      await interaction.deferReply();
-      console.log(`[Admin] Manually applying proposal #${proposal.id} ("${proposal.name}") in guild "${interaction.guild.name}"`);
-      const success = await rebrandService.applyRebrand(interaction.guild, proposal, true);
-
-      if (success) {
-        const appliedEmbed = createSuccessEmbed(
-          "🎉 Rebrand Applied Successfully!",
-          `Server has been rebranded to **${proposal.name}**!\nTopic: ${proposal.topic || "*N/A*"}`
-        );
-        if (proposal.icon_url) appliedEmbed.setThumbnail(proposal.icon_url);
-        await interaction.editReply({ embeds: [appliedEmbed] });
-      } else {
-        const errEmbed = createErrorEmbed(
-          "Apply Failed",
-          "Failed to apply the rebrand. Check bot permissions (Manage Server permission required)."
-        );
-        await interaction.editReply({ embeds: [errEmbed] });
-      }
+    case "schedule": {
+      const upcoming = database.getUpcomingSchedule(guildId);
+      const scheduleEmbed = rebrandService.getScheduleEmbed(upcoming);
+      await interaction.reply({ embeds: [scheduleEmbed] });
       break;
     }
 
-    case "revert": {
-      await interaction.deferReply();
-      console.log(`[Admin] Manually reverting server name and icon to baseline for guild "${interaction.guild.name}"`);
-      const success = await rebrandService.revertRebrand(interaction.guild, true);
+    case "trigger": {
+      const action = interaction.options.getString("action", true);
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-      if (success) {
-        const revertedEmbed = createSuccessEmbed(
-          "✨ Server Reverted",
-          "The server name and icon have been reverted back to their baseline defaults."
-        );
-        await interaction.editReply({ embeds: [revertedEmbed] });
+      if (action === "apply") {
+        const result = await rebrandService.applyNextRebrand(interaction.guild);
+        if (result.success) {
+          const successEmbed = createSuccessEmbed("Rebrand Applied", result.message);
+          await interaction.editReply({ embeds: [successEmbed] });
+        } else {
+          const errEmbed = createErrorEmbed("Trigger Failed", result.message);
+          await interaction.editReply({ embeds: [errEmbed] });
+        }
       } else {
-        const errEmbed = createErrorEmbed("Revert Failed", "Failed to revert server to defaults.");
-        await interaction.editReply({ embeds: [errEmbed] });
+        const result = await rebrandService.revertToDefault(interaction.guild);
+        if (result.success) {
+          const successEmbed = createSuccessEmbed("Reverted to Baseline", result.message);
+          await interaction.editReply({ embeds: [successEmbed] });
+        } else {
+          const errEmbed = createErrorEmbed("Trigger Failed", result.message);
+          await interaction.editReply({ embeds: [errEmbed] });
+        }
       }
-      break;
-    }
-
-    case "cancel": {
-      const proposalId = interaction.options.getInteger("id", true);
-      const proposal = database.getProposal(proposalId);
-
-      if (!proposal || proposal.guild_id !== guildId) {
-        const errEmbed = createErrorEmbed("Not Found", `Proposal **#${proposalId}** does not exist.`);
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
-        return;
-      }
-
-      database.cancelProposal(proposalId);
-      console.log(`[Admin] Cancelled proposal #${proposalId} in guild "${interaction.guild.name}"`);
-
-      const cancelEmbed = createSuccessEmbed(
-        "🚫 Proposal Cancelled",
-        `Proposal **#${proposalId} ("${proposal.name}")** has been cancelled.`
-      );
-      await interaction.reply({ embeds: [cancelEmbed] });
       break;
     }
   }

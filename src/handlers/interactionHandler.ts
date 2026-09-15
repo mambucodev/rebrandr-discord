@@ -10,6 +10,7 @@ import {
   TextInputStyle,
   ActionRowBuilder,
   ThreadChannel,
+  ForumChannel,
   MessageFlags,
   EmbedBuilder,
   TextChannel,
@@ -19,6 +20,7 @@ import { database } from "../database";
 import { handleCommandInteraction } from "../commands";
 import { hasAdminPermission } from "../commands/admin";
 import { rebrandService } from "../services/rebrandService";
+import { updateThreadStatusTag } from "./threadHandler";
 import {
   createProposalEmbed,
   createProposalActionRow,
@@ -28,6 +30,7 @@ import {
   createSuggestionEmbed,
   createSuggestionActionRow,
   createConfirmationActionRow,
+  createForumTagConfigEmbedAndRows,
 } from "../services/announcement";
 import { formatWeekendDate } from "../utils/dateUtils";
 
@@ -41,9 +44,9 @@ export async function handleInteraction(interaction: Interaction): Promise<void>
       await handleButtonInteraction(interaction);
     } else if (interaction.isModalSubmit()) {
       console.log(`[Interaction] Modal "${interaction.customId}" submitted by @${interaction.user.tag} in guild ${interaction.guild?.name || "DM"}`);
-      await handleModalSubmitInteraction(interaction);
+      await handleModalSubmit(interaction);
     } else if (interaction.isStringSelectMenu()) {
-      console.log(`[Interaction] Select menu "${interaction.customId}" changed by @${interaction.user.tag} (value: ${interaction.values.join(", ")})`);
+      console.log(`[Interaction] Select menu "${interaction.customId}" selected by @${interaction.user.tag} in guild ${interaction.guild?.name || "DM"}`);
       await handleSelectMenuInteraction(interaction);
     }
   } catch (err) {
@@ -62,6 +65,44 @@ export async function handleInteraction(interaction: Interaction): Promise<void>
 }
 
 async function handleSelectMenuInteraction(interaction: StringSelectMenuInteraction): Promise<void> {
+  // New multi-tag configuration menu (rebrand, approved, declined)
+  if (interaction.customId.startsWith("rebrand_tag_select:")) {
+    if (!hasAdminPermission(interaction)) {
+      console.log(`[SelectMenu] Permission denied for @${interaction.user.tag} on tag selection`);
+      const errorEmbed = createErrorEmbed("Permission Denied", "Only administrators can configure rebrand settings.");
+      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const [, type, forumId] = interaction.customId.split(":");
+    const selectedVal = interaction.values[0]!;
+    const newTagId = selectedVal === "clear" ? null : selectedVal;
+
+    const updates: Record<string, any> = { forum_channel_id: forumId };
+    if (type === "rebrand") updates.rebrand_tag_id = newTagId;
+    if (type === "approved") updates.approved_tag_id = newTagId;
+    if (type === "declined") updates.declined_tag_id = newTagId;
+
+    const updatedSettings = database.updateGuildSettings(interaction.guildId!, updates);
+    console.log(
+      `[SelectMenu] Updated ${type} tag to ${newTagId || "None"} for forum ${forumId} in guild ${interaction.guildId}`
+    );
+
+    const forumChan = (await interaction.guild?.channels.fetch(forumId).catch(() => null)) as ForumChannel | null;
+    if (forumChan && forumChan.availableTags) {
+      const { embed, rows } = createForumTagConfigEmbedAndRows(forumChan, updatedSettings);
+      await interaction.update({ embeds: [embed], components: rows });
+    } else {
+      const successEmbed = createSuccessEmbed(
+        "Tag Updated",
+        `Configured **${type} tag** to \`${newTagId || "None"}\` for forum <#${forumId}>.`
+      );
+      await interaction.update({ embeds: [successEmbed], components: [] });
+    }
+    return;
+  }
+
+  // Legacy single tag selector
   if (interaction.customId.startsWith("rebrand_select_tag:")) {
     if (!hasAdminPermission(interaction)) {
       console.log(`[SelectMenu] Permission denied for @${interaction.user.tag} on tag selection`);
@@ -113,39 +154,35 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     if (!isThreadAuthor && !isAdmin) {
       const errorEmbed = createErrorEmbed(
         "Author Only",
-        "Only the proposal author or server administrators can upload the main server icon. You can suggest assets using **Suggest Asset**."
+        "Only the proposal creator or administrators can upload the server icon."
       );
       await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
       return;
     }
 
-    const channel = interaction.channel;
-    if (!channel || !channel.isThread()) {
-      const errorEmbed = createErrorEmbed(
-        "Upload in Thread",
-        "Please upload your icon image file by using `/rebrand upload` or posting inside the proposal thread."
-      );
+    if (!interaction.channel || !interaction.channel.isThread()) {
+      const errorEmbed = createErrorEmbed("Thread Only", "This button can only be used inside the proposal thread.");
       await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
       return;
     }
 
     const promptEmbed = new EmbedBuilder()
-      .setTitle("📸 Upload Your Server Icon")
+      .setTitle("📸 Upload Server Icon")
       .setDescription(
-        `Please attach and send your image file (**PNG, JPG, WEBP, GIF**) directly in this thread within the next **2 minutes**!\n\n*(Alternatively, you can run \`/rebrand upload\` with an attached file)*`
+        `Please drop or upload your icon image file (**PNG, JPG, WEBP, or GIF**) into this thread within the next 2 minutes!\n\n*The bot will download, validate, and preview it on your proposal card automatically.*`
       )
-      .setColor(0x38b6ff)
-      .setFooter({ text: "Upload image file directly • No URLs needed" });
+      .setColor(0x5865f2)
+      .setFooter({ text: "Max file size: 10MB • Direct file attachments only" });
 
     await interaction.reply({ embeds: [promptEmbed], flags: MessageFlags.Ephemeral });
 
-    const thread = channel as ThreadChannel;
-    try {
-      const filter = (m: Message) => m.author.id === interaction.user.id && m.attachments.size > 0;
-      const collected = await thread.awaitMessages({ filter, max: 1, time: 120_000 });
+    const thread = interaction.channel as ThreadChannel;
+    const filter = (m: Message) => m.author.id === interaction.user.id && m.attachments.size > 0;
 
-      if (collected.size > 0) {
-        const userMsg = collected.first()!;
+    try {
+      const collected = await thread.awaitMessages({ filter, max: 1, time: 120_000, errors: ["time"] });
+      const userMsg = collected.first();
+      if (userMsg && userMsg.attachments.size > 0) {
         const attachment = userMsg.attachments.first()!;
         console.log(`[Upload] User @${interaction.user.tag} uploaded attachment "${attachment.name}" for proposal #${proposal.id}`);
 
@@ -219,9 +256,9 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
 
     const topicInput = new TextInputBuilder()
       .setCustomId("rebrand_topic")
-      .setLabel("Topic / Theme Description")
+      .setLabel("Theme / Topic Vision")
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder("Describe the theme, activities, colors, or lore...")
+      .setPlaceholder("Explain your theme, vibes, or plans for this weekend...")
       .setMaxLength(250)
       .setRequired(false)
       .setValue(proposal.topic || "");
@@ -235,7 +272,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     return;
   }
 
-  // Suggest Asset button
+  // Community Suggest Asset Modal
   if (action === "rebrand_suggest_modal") {
     const proposal = database.getProposal(id);
     if (!proposal) {
@@ -246,7 +283,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
 
     const modal = new ModalBuilder()
       .setCustomId(`rebrand_suggest_submit:${proposal.id}`)
-      .setTitle(`Suggest Assets #${proposal.id}`);
+      .setTitle(`Suggest Assets for #${proposal.id}`);
 
     const nameInput = new TextInputBuilder()
       .setCustomId("suggest_name")
@@ -441,6 +478,9 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     if (approved.thread_id) {
       const thread = (await interaction.guild.channels.fetch(approved.thread_id).catch(() => null)) as ThreadChannel | null;
       if (thread) {
+        // Automatically swap tags: remove rebrand tag, apply Approved tag (only 1 status tag assigned)
+        await updateThreadStatusTag(thread, "approved", settings);
+
         if (approved.message_id) {
           const cardMsg = await thread.messages.fetch(approved.message_id).catch(() => null);
           if (cardMsg) {
@@ -500,6 +540,9 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     if (rejected.thread_id) {
       const thread = (await interaction.guild.channels.fetch(rejected.thread_id).catch(() => null)) as ThreadChannel | null;
       if (thread) {
+        // Automatically swap tags: remove rebrand tag, apply Declined tag (only 1 status tag assigned)
+        await updateThreadStatusTag(thread, "declined", settings);
+
         if (rejected.message_id) {
           const cardMsg = await thread.messages.fetch(rejected.message_id).catch(() => null);
           if (cardMsg) {
@@ -531,99 +574,101 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       }
     }
 
-    const rejectedEmbed = createErrorEmbed("Proposal Rejected", `Proposal **#${id}** has been rejected.`);
-    await interaction.update({ embeds: [rejectedEmbed], components: [] });
+    const successEmbed = createSuccessEmbed(
+      "❌ Proposal Rejected",
+      `Proposal **#${rejected.id} ("${rejected.name}")** has been marked as rejected.`
+    );
+    await interaction.update({ embeds: [successEmbed], components: [] });
     return;
   }
 }
 
-async function handleModalSubmitInteraction(interaction: ModalSubmitInteraction): Promise<void> {
-  const [prefix, idStr] = interaction.customId.split(":");
+async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  const [action, idStr] = interaction.customId.split(":");
+  const id = parseInt(idStr ?? "", 10);
 
-  if (prefix === "rebrand_modal_submit") {
-    const proposalId = parseInt(idStr ?? "", 10);
-    const proposal = database.getProposal(proposalId);
-    if (!proposal || !interaction.guild) {
-      const errorEmbed = createErrorEmbed("Proposal Not Found", "The rebrand proposal could not be found.");
+  if (action === "rebrand_modal_submit") {
+    const name = interaction.fields.getTextInputValue("rebrand_name");
+    const topic = interaction.fields.getTextInputValue("rebrand_topic");
+
+    const proposal = database.getProposal(id);
+    if (!proposal) {
+      const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
       await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
       return;
     }
 
-    const name = interaction.fields.getTextInputValue("rebrand_name").trim();
-    const topic = interaction.fields.getTextInputValue("rebrand_topic")?.trim() || null;
+    const isAuthor = proposal.user_id === interaction.user.id;
+    const isAdmin = hasAdminPermission(interaction);
 
-    console.log(`[ModalSubmit] Details updated for proposal #${proposal.id} by @${interaction.user.tag} (Name: "${name}")`);
+    if (!isAuthor && !isAdmin) {
+      const errorEmbed = createErrorEmbed("Permission Denied", "Only the creator or administrators can edit details.");
+      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      return;
+    }
 
-    const hasIcon = Boolean(proposal.icon_url || proposal.icon_path);
-    const updated = database.updateProposalDetails(proposal.id, {
+    const updated = database.updateProposalDetails(id, {
       name,
-      topic,
-      is_ready: hasIcon ? 1 : 0,
+      topic: topic || null,
     })!;
 
-    const settings = database.getGuildSettings(interaction.guild.id);
-    if (proposal.thread_id && proposal.message_id) {
-      const thread = (await interaction.guild.channels.fetch(proposal.thread_id).catch(() => null)) as ThreadChannel | null;
-      if (thread) {
-        const cardMsg = await thread.messages.fetch(proposal.message_id).catch(() => null);
-        if (cardMsg) {
-          const cardEmbed = createProposalEmbed(updated, settings.min_upvotes);
-          const cardRow = createProposalActionRow(updated, settings.min_upvotes);
-          await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
-        }
+    console.log(`[Modal] Updated proposal #${id} details: Name="${name}", Topic="${topic}"`);
+
+    const settings = database.getGuildSettings(interaction.guildId!);
+    if (proposal.thread_id && proposal.message_id && interaction.channel?.isThread()) {
+      const cardMsg = await interaction.channel.messages.fetch(proposal.message_id).catch(() => null);
+      if (cardMsg) {
+        const cardEmbed = createProposalEmbed(updated, settings.min_upvotes);
+        const cardRow = createProposalActionRow(updated, settings.min_upvotes);
+        await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
       }
     }
 
-    await rebrandService.checkAndNotifyAdminLogs(interaction.guild, proposal.id);
-
-    const successEmbed = createSuccessEmbed(
-      "🎨 Details Updated",
-      `Proposed server name set to **${name}**!${!hasIcon ? "\n\n⚠️ Remember to click **Upload Icon** to upload your custom server icon." : ""}`
-    );
-    if (updated.icon_url) {
-      successEmbed.setThumbnail(updated.icon_url);
+    if (interaction.guild) {
+      await rebrandService.checkAndNotifyAdminLogs(interaction.guild, proposal.id);
     }
+
+    const successEmbed = createSuccessEmbed("Details Updated", `Updated proposal name to **"${name}"**!`);
     await interaction.reply({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
     return;
   }
 
-  if (prefix === "rebrand_suggest_submit") {
-    const proposalId = parseInt(idStr ?? "", 10);
-    const proposal = database.getProposal(proposalId);
-    if (!proposal || !interaction.guild) {
-      const errorEmbed = createErrorEmbed("Proposal Not Found", "The rebrand proposal could not be found.");
+  if (action === "rebrand_suggest_submit") {
+    const name = interaction.fields.getTextInputValue("suggest_name");
+    const topic = interaction.fields.getTextInputValue("suggest_topic");
+
+    const proposal = database.getProposal(id);
+    if (!proposal) {
+      const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
       await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
       return;
     }
-
-    const name = interaction.fields.getTextInputValue("suggest_name").trim();
-    const topic = interaction.fields.getTextInputValue("suggest_topic")?.trim() || null;
 
     const suggestion = database.createSuggestion({
       proposalId: proposal.id,
       userId: interaction.user.id,
       name,
-      iconUrl: proposal.icon_url || "",
-      topic,
+      iconUrl: "",
+      topic: topic || null,
     });
 
-    if (proposal.thread_id) {
-      const thread = (await interaction.guild.channels.fetch(proposal.thread_id).catch(() => null)) as ThreadChannel | null;
-      if (thread) {
-        const suggestEmbed = createSuggestionEmbed(suggestion, proposal);
-        const suggestRow = createSuggestionActionRow(suggestion.id);
-        await thread.send({
-          embeds: [suggestEmbed],
-          components: [suggestRow],
-        });
-      }
+    console.log(`[Suggestion] Created asset suggestion #${suggestion.id} by @${interaction.user.tag} for proposal #${proposal.id}`);
+
+    if (proposal.thread_id && interaction.channel?.isThread()) {
+      const suggestEmbed = createSuggestionEmbed(suggestion, proposal);
+      const suggestRow = createSuggestionActionRow(suggestion.id);
+      await interaction.channel.send({
+        content: `<@${proposal.user_id}> A new asset suggestion was submitted by <@${interaction.user.id}>!`,
+        embeds: [suggestEmbed],
+        components: [suggestRow],
+      });
     }
 
-    const infoEmbed = createSuccessEmbed(
-      "💡 Suggestion Submitted",
-      `Your theme suggestion has been posted in the thread for the author (<@${proposal.user_id}>) and admins to review!`
+    const successEmbed = createSuccessEmbed(
+      "Suggestion Submitted",
+      `Your asset suggestion for proposal **#${proposal.id}** has been posted to the thread for the author to review!`
     );
-    await interaction.reply({ embeds: [infoEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
     return;
   }
 }

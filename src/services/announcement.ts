@@ -3,7 +3,9 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
   Guild,
+  ForumChannel,
   PermissionsBitField,
   ChatInputCommandInteraction,
   ButtonInteraction,
@@ -65,6 +67,9 @@ export function createProposalEmbed(proposal: ProposalWithVotes, minUpvotes: num
   } else if (proposal.status === "rejected") {
     statusColor = 0xed4245; // Coral Red
     statusBadge = "🔴 **Declined**";
+  } else if (proposal.status === "cancelled") {
+    statusColor = 0x95a5a6; // Slate Grey
+    statusBadge = "⚪ **Cancelled (Untagged)**";
   } else if (!isReady) {
     statusColor = 0xfee75c; // Amber Gold
     statusBadge = "🟡 **Needs Icon Upload**";
@@ -368,13 +373,23 @@ export function createStatusEmbed(
         inline: true,
       },
       {
-        name: "📫 Rebrand Forum Channel",
+        name: "📬 Rebrand Forum Channel",
         value: settings.forum_channel_id ? `<#${settings.forum_channel_id}>` : "*Not set*",
         inline: true,
       },
       {
-        name: "🏷️ Configured Forum Tag",
+        name: "🏷️ Rebrand Forum Tag",
         value: settings.rebrand_tag_id ? `\`${settings.rebrand_tag_id}\`` : "*Not set*",
+        inline: true,
+      },
+      {
+        name: "✅ Approved Status Tag",
+        value: settings.approved_tag_id ? `\`${settings.approved_tag_id}\`` : "*Not set (Optional)*",
+        inline: true,
+      },
+      {
+        name: "❌ Declined Status Tag",
+        value: settings.declined_tag_id ? `\`${settings.declined_tag_id}\`` : "*Not set (Optional)*",
         inline: true,
       },
       {
@@ -424,6 +439,93 @@ export function createStatusEmbed(
   }
 
   return embed;
+}
+
+/**
+ * Builds the interactive tag configuration embed and dropdown select menus
+ * for selecting Rebrand, Approved, and Declined forum tags.
+ */
+export function createForumTagConfigEmbedAndRows(
+  forumChan: ForumChannel,
+  settings: GuildSettings
+): {
+  embed: EmbedBuilder;
+  rows: ActionRowBuilder<StringSelectMenuBuilder>[];
+} {
+  const availableTags = forumChan.availableTags;
+
+  const rebrandTag = availableTags.find((t) => t.id === settings.rebrand_tag_id);
+  const approvedTag = availableTags.find((t) => t.id === settings.approved_tag_id);
+  const declinedTag = availableTags.find((t) => t.id === settings.declined_tag_id);
+
+  const embed = new EmbedBuilder()
+    .setTitle("🏷️ Configure Forum Status Tags")
+    .setColor(0x5865f2)
+    .setDescription(
+      `Configure tags for forum <#${forumChan.id}>.\n` +
+      `When a proposal changes status, the bot automatically swaps tags so **only one status tag** is assigned at a time.`
+    )
+    .addFields(
+      {
+        name: "🏷️ Rebrand Proposal Tag",
+        value: rebrandTag ? `**${rebrandTag.name}** (\`${rebrandTag.id}\`)` : "*Not set (Select below)*",
+        inline: false,
+      },
+      {
+        name: "✅ Approved Status Tag",
+        value: approvedTag ? `**${approvedTag.name}** (\`${approvedTag.id}\`)` : "*Not set (Optional)*",
+        inline: true,
+      },
+      {
+        name: "❌ Declined Status Tag",
+        value: declinedTag ? `**${declinedTag.name}** (\`${declinedTag.id}\`)` : "*Not set (Optional)*",
+        inline: true,
+      }
+    )
+    .setFooter({
+      text: "Selections save automatically • Only 1 status tag active at a time",
+    });
+
+  const baseOptions = availableTags.slice(0, 24).map((t) => ({
+    label: t.name,
+    value: t.id,
+    description: `Tag ID: ${t.id}`,
+    emoji: t.emoji?.name ? { name: t.emoji.name, id: t.emoji.id || undefined } : undefined,
+  }));
+
+  const makeRow = (
+    type: "rebrand" | "approved" | "declined",
+    placeholder: string,
+    currentTagId: string | null
+  ) => {
+    const options = [
+      {
+        label: "None / Clear Tag",
+        value: "clear",
+        description: `Do not assign a ${type} tag`,
+        default: !currentTagId,
+      },
+      ...baseOptions.map((opt) => ({
+        ...opt,
+        default: opt.value === currentTagId,
+      })),
+    ];
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(`rebrand_tag_select:${type}:${forumChan.id}`)
+      .setPlaceholder(placeholder)
+      .addOptions(options);
+
+    return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
+  };
+
+  const rows = [
+    makeRow("rebrand", "🏷️ Select Rebrand Proposal Tag", settings.rebrand_tag_id),
+    makeRow("approved", "✅ Select Approved Status Tag", settings.approved_tag_id),
+    makeRow("declined", "❌ Select Declined Status Tag", settings.declined_tag_id),
+  ];
+
+  return { embed, rows };
 }
 
 export function hasAdminPermission(

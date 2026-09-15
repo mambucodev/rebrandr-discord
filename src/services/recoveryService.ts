@@ -102,6 +102,18 @@ export class RecoveryService {
         continue;
       }
 
+      // Check if rebrand tag was removed by a moderator while offline
+      const hasRebrand = Boolean(settings.rebrand_tag_id && thread.appliedTags?.includes(settings.rebrand_tag_id));
+      const hasApproved = Boolean(settings.approved_tag_id && thread.appliedTags?.includes(settings.approved_tag_id));
+      const hasDeclined = Boolean(settings.declined_tag_id && thread.appliedTags?.includes(settings.declined_tag_id));
+
+      if (!hasRebrand && !hasApproved && !hasDeclined) {
+        console.log(`[Recovery] Rebrand tag was removed by moderator from thread ${thread.id} while offline. Cancelling proposal #${proposal.id}...`);
+        db.cancelProposal(proposal.id);
+        report.staleProposalsCleaned++;
+        continue;
+      }
+
       processedThreadIds.add(thread.id);
       report.threadsProcessed++;
       try {

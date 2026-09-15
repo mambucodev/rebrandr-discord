@@ -9,6 +9,8 @@ export interface GuildSettings {
   logs_channel_id: string | null;
   forum_channel_id: string | null;
   rebrand_tag_id: string | null;
+  approved_tag_id: string | null;
+  declined_tag_id: string | null;
   min_upvotes: number;
   custom_upvote_emojis: string | null;
   custom_downvote_emojis: string | null;
@@ -89,6 +91,8 @@ export class RebrandDatabase {
         logs_channel_id TEXT,
         forum_channel_id TEXT,
         rebrand_tag_id TEXT,
+        approved_tag_id TEXT,
+        declined_tag_id TEXT,
         min_upvotes INTEGER DEFAULT 4,
         custom_upvote_emojis TEXT,
         custom_downvote_emojis TEXT,
@@ -158,6 +162,12 @@ export class RebrandDatabase {
     } catch {}
     try {
       this.db.run("ALTER TABLE guild_settings ADD COLUMN rebrand_tag_id TEXT;");
+    } catch {}
+    try {
+      this.db.run("ALTER TABLE guild_settings ADD COLUMN approved_tag_id TEXT;");
+    } catch {}
+    try {
+      this.db.run("ALTER TABLE guild_settings ADD COLUMN declined_tag_id TEXT;");
     } catch {}
     try {
       this.db.run("ALTER TABLE guild_settings ADD COLUMN custom_upvote_emojis TEXT;");
@@ -236,6 +246,12 @@ export class RebrandDatabase {
         `);
         this.db.run("DROP TABLE proposals;");
         this.db.run("ALTER TABLE proposals_new RENAME TO proposals;");
+
+        this.db.run(`
+          CREATE INDEX IF NOT EXISTS idx_proposals_guild_status ON proposals(guild_id, status);
+          CREATE INDEX IF NOT EXISTS idx_proposals_scheduled_date ON proposals(guild_id, scheduled_date);
+          CREATE INDEX IF NOT EXISTS idx_proposals_thread_id ON proposals(thread_id);
+        `);
       })();
     } finally {
       this.db.run("PRAGMA foreign_keys = ON;");
@@ -254,6 +270,8 @@ export class RebrandDatabase {
       logs_channel_id: null,
       forum_channel_id: null,
       rebrand_tag_id: null,
+      approved_tag_id: null,
+      declined_tag_id: null,
       min_upvotes: config.defaultMinUpvotes,
       custom_upvote_emojis: null,
       custom_downvote_emojis: null,
@@ -266,13 +284,15 @@ export class RebrandDatabase {
     };
 
     this.db.run(
-      `INSERT INTO guild_settings (guild_id, logs_channel_id, forum_channel_id, rebrand_tag_id, min_upvotes, custom_upvote_emojis, custom_downvote_emojis, default_name, default_icon_url, default_icon_path, active_proposal_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO guild_settings (guild_id, logs_channel_id, forum_channel_id, rebrand_tag_id, approved_tag_id, declined_tag_id, min_upvotes, custom_upvote_emojis, custom_downvote_emojis, default_name, default_icon_url, default_icon_path, active_proposal_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         defaultSettings.guild_id,
         defaultSettings.logs_channel_id,
         defaultSettings.forum_channel_id,
         defaultSettings.rebrand_tag_id,
+        defaultSettings.approved_tag_id,
+        defaultSettings.declined_tag_id,
         defaultSettings.min_upvotes,
         defaultSettings.custom_upvote_emojis,
         defaultSettings.custom_downvote_emojis,
@@ -301,6 +321,8 @@ export class RebrandDatabase {
        SET logs_channel_id = ?,
            forum_channel_id = ?,
            rebrand_tag_id = ?,
+           approved_tag_id = ?,
+           declined_tag_id = ?,
            min_upvotes = ?,
            custom_upvote_emojis = ?,
            custom_downvote_emojis = ?,
@@ -314,6 +336,8 @@ export class RebrandDatabase {
         updated.logs_channel_id,
         updated.forum_channel_id,
         updated.rebrand_tag_id,
+        updated.approved_tag_id,
+        updated.declined_tag_id,
         updated.min_upvotes,
         updated.custom_upvote_emojis,
         updated.custom_downvote_emojis,

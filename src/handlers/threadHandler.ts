@@ -163,6 +163,41 @@ export interface ThreadSyncResult {
 }
 
 /**
+ * Updates a proposal thread's forum status tag (approved, declined, or rebrand).
+ * Enforces that only one status tag is assigned at a time:
+ * Removes existing rebrand/approved/declined tags and applies the single new status tag.
+ */
+export async function updateThreadStatusTag(
+  thread: ThreadChannel,
+  status: "approved" | "declined" | "rebrand",
+  settings: GuildSettings
+): Promise<void> {
+  if (!thread || typeof thread.setAppliedTags !== "function") return;
+
+  const targetTagId =
+    status === "approved"
+      ? settings.approved_tag_id
+      : status === "declined"
+      ? settings.declined_tag_id
+      : settings.rebrand_tag_id;
+
+  if (!targetTagId) return;
+
+  try {
+    const statusTags = new Set(
+      [settings.rebrand_tag_id, settings.approved_tag_id, settings.declined_tag_id].filter(Boolean)
+    );
+    const nonStatusTags = (thread.appliedTags || []).filter((id) => !statusTags.has(id));
+    const newTags = [targetTagId, ...nonStatusTags].slice(0, 5);
+
+    await thread.setAppliedTags(newTags);
+    console.log(`[ThreadTags] Thread "${thread.name}" (${thread.id}) status tag updated to "${status}" (tag ID: ${targetTagId})`);
+  } catch (err) {
+    console.error(`[ThreadTags] Failed to update status tag on thread ${thread.id}:`, err);
+  }
+}
+
+/**
  * Synchronizes a thread proposal (used on thread create, thread update, and startup recovery):
  * 1. Ensures the proposal record exists in the database.
  * 2. If starter post contains an attached image, downloads and validates it locally.
@@ -323,13 +358,13 @@ export async function syncThreadProposal(
   };
 }
 
-export async function handleThreadCreate(thread: ThreadChannel): Promise<void> {
+export async function handleThreadCreate(thread: ThreadChannel, db: RebrandDatabase = database): Promise<void> {
   const guild = thread.guild;
   if (!guild) return;
 
   console.log(`[ThreadCreate] New thread detected: "${thread.name}" (${thread.id}) in guild "${guild.name}"`);
 
-  const settings = database.getGuildSettings(guild.id);
+  const settings = db.getGuildSettings(guild.id);
   if (!settings.forum_channel_id || !settings.rebrand_tag_id) {
     return;
   }
@@ -345,17 +380,18 @@ export async function handleThreadCreate(thread: ThreadChannel): Promise<void> {
   }
 
   console.log(`[ThreadCreate] Rebrand tag matched on thread "${thread.name}"! Setting up proposal...`);
-  await syncThreadProposal(thread, settings, database);
+  await syncThreadProposal(thread, settings, db);
 }
 
 export async function handleThreadUpdate(
   oldThread: ThreadChannel,
-  newThread: ThreadChannel
+  newThread: ThreadChannel,
+  db: RebrandDatabase = database
 ): Promise<void> {
   const guild = newThread.guild;
   if (!guild) return;
 
-  const settings = database.getGuildSettings(guild.id);
+  const settings = db.getGuildSettings(guild.id);
   if (!settings.forum_channel_id || !settings.rebrand_tag_id) {
     return;
   }
@@ -364,12 +400,46 @@ export async function handleThreadUpdate(
     return;
   }
 
-  const hadTag = oldThread.appliedTags?.includes(settings.rebrand_tag_id);
-  const hasTag = newThread.appliedTags.includes(settings.rebrand_tag_id);
+  const hadRebrandTag = oldThread.appliedTags?.includes(settings.rebrand_tag_id);
+  const hasRebrandTag = newThread.appliedTags?.includes(settings.rebrand_tag_id);
 
-  if (!hadTag && hasTag) {
+  if (!hadRebrandTag && hasRebrandTag) {
     console.log(`[ThreadUpdate] Rebrand tag added to thread "${newThread.name}" (${newThread.id})`);
-    await syncThreadProposal(newThread, settings, database);
+    await syncThreadProposal(newThread, settings, db);
+    return;
+  }
+
+  if (hadRebrandTag && !hasRebrandTag) {
+    const proposal = db.getProposalByThreadId(newThread.id);
+    if (!proposal) return;
+
+    // Check if the tag removal was due to the bot switching to Approved or Declined tag,
+    // or if the proposal was already resolved (approved, rejected, or cancelled):
+    const hasApprovedTag = Boolean(settings.approved_tag_id && newThread.appliedTags?.includes(settings.approved_tag_id));
+    const hasDeclinedTag = Boolean(settings.declined_tag_id && newThread.appliedTags?.includes(settings.declined_tag_id));
+    const isAlreadyResolved = proposal.status === "approved" || proposal.status === "rejected" || proposal.status === "cancelled";
+
+    if (hasApprovedTag || hasDeclinedTag || isAlreadyResolved) {
+      console.log(
+        `[ThreadUpdate] Rebrand tag transitioned to status tag on thread "${newThread.name}" (Proposal #${proposal.id} Status: ${proposal.status}). Ignoring tag removal.`
+      );
+      return;
+    }
+
+    // The tag was removed by a moderator because the thread is NOT considered a rebrand proposal.
+    console.log(
+      `[ThreadUpdate] Rebrand tag was removed by moderator from pending thread "${newThread.name}". Cancelling proposal #${proposal.id}...`
+    );
+    db.cancelProposal(proposal.id);
+
+    if (proposal.message_id) {
+      const cardMsg = await newThread.messages.fetch(proposal.message_id).catch(() => null);
+      if (cardMsg && typeof cardMsg.edit === "function") {
+        const cancelledProposal = db.getProposal(proposal.id)!;
+        const cardEmbed = createProposalEmbed(cancelledProposal, settings.min_upvotes);
+        await cardMsg.edit({ embeds: [cardEmbed], components: [] }).catch(() => null);
+      }
+    }
   }
 }
 
