@@ -1,0 +1,20 @@
+services:
+  rebrand-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rebrand-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DATABASE_PATH=/app/data/rebrand.sqlite
+      - ICONS_DIR=/app/data/icons
+      - PORT=3000
+    volumes:
+      - rebrand_data:/app/data
+    ports:
+      - "3000:3000"
+
+volumes:
+  rebrand_data:
+    driver: local

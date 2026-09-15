@@ -1,0 +1,30 @@
+{
+  "name": "rebrand-bot",
+  "version": "1.0.0",
+  "description": "Automated Discord weekend rebrands bot",
+  "main": "index.ts",
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun --watch index.ts",
+    "test": "bun test"
+  },
+  "keywords": [
+    "discord",
+    "discord-bot",
+    "rebrand",
+    "automation"
+  ],
+  "author": "mambucodev",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "discord.js": "^14.27.0"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  }
+}
