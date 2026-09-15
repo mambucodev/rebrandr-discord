@@ -264,13 +264,23 @@ export class RebrandService {
       let iconBuf: Buffer | null = overrideIconBuffer || null;
 
       if (!iconBuf) {
-        const iconUrl = guild.iconURL({ extension: "png", size: 1024 });
-        if (iconUrl) {
+        const settings = database.getGuildSettings(guild.id);
+        if (settings.default_icon_path && fs.existsSync(settings.default_icon_path)) {
           try {
-            const res = await this.downloadAndCacheImage(iconUrl, `pfp_${guild.id}`);
-            iconBuf = res.buffer;
-          } catch (dlErr) {
-            console.warn(`[BotBranding] Failed downloading guild icon for pfp:`, dlErr);
+            iconBuf = fs.readFileSync(settings.default_icon_path);
+          } catch {}
+        }
+
+        if (!iconBuf) {
+          const iconUrl = guild.iconURL({ extension: "png", size: 1024 }) || settings.default_icon_url;
+          if (iconUrl) {
+            try {
+              console.log(`[BotBranding] Downloading server icon for bot PFP from ${iconUrl}...`);
+              const res = await this.downloadAndCacheImage(iconUrl, `pfp_${guild.id}`);
+              iconBuf = res.buffer;
+            } catch (dlErr) {
+              console.warn(`[BotBranding] Failed downloading guild icon for pfp:`, dlErr);
+            }
           }
         }
       }

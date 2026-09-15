@@ -10,6 +10,7 @@ import {
 } from "./src/handlers/threadHandler";
 import { scheduler } from "./src/services/scheduler";
 import { recoveryService } from "./src/services/recoveryService";
+import { rebrandService } from "./src/services/rebrandService";
 import { startHealthServer, stopHealthServer } from "./src/services/healthServer";
 import { database } from "./src/database";
 
