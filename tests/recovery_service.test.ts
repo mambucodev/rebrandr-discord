@@ -299,4 +299,130 @@ describe("RecoveryService retroactive synchronization", () => {
     expect(editedEmbed.description).toContain("• **Icon:** Not Uploaded");
     expect(editedEmbed.description).toContain("### Voting");
   });
+
+  it("strictly ignores threads without the rebrand tag and deletes any wrong bot proposal cards", async () => {
+    const guildId = "guild-filter-test";
+    db.updateGuildSettings(guildId, {
+      forum_channel_id: "forum-general",
+      rebrand_tag_id: "tag-weekend-rebrand",
+      approved_tag_id: "tag-general-approved",
+      declined_tag_id: "tag-general-declined",
+    });
+
+    let wrongCardDeleted = false;
+    let pinNotificationDeleted = false;
+    let legitimateCardSent = false;
+
+    // 1. Thread with general "Approved" tag, but NOT "Weekend Rebrand"
+    const generalApprovedThread: any = {
+      id: "thread-minecraft-server",
+      name: "Make a Minecraft Server",
+      appliedTags: ["tag-general-approved"], // matches approved_tag_id, but NOT rebrand_tag_id!
+      client: { user: { id: "bot-client-user" } },
+      send: async () => {
+        throw new Error("Should never send message to non-rebrand thread!");
+      },
+      messages: {
+        fetch: async () =>
+          new Map([
+            [
+              "wrong-bot-msg-1",
+              {
+                id: "wrong-bot-msg-1",
+                author: { id: "bot-client-user" },
+                embeds: [{ title: "Proposal #99 — Pending Rebrand" }],
+                delete: async () => {
+                  wrongCardDeleted = true;
+                },
+              },
+            ],
+            [
+              "pin-notif-1",
+              {
+                id: "pin-notif-1",
+                type: 24,
+                deletable: true,
+                delete: async () => {
+                  pinNotificationDeleted = true;
+                },
+              },
+            ],
+          ]),
+      },
+    };
+
+    // 2. Legitimate rebrand thread with "Weekend Rebrand" tag
+    const legitimateRebrandThread: any = {
+      id: "thread-cyberpunk-nook",
+      name: "Cyberpunk Nook",
+      appliedTags: ["tag-weekend-rebrand"],
+      ownerId: "author-cyber",
+      client: { user: { id: "bot-client-user" } },
+      isThread: () => true,
+      fetchStarterMessage: async () => ({
+        id: "thread-cyberpunk-nook",
+        author: { id: "author-cyber" },
+        reactions: { cache: new Map() },
+      }),
+      messages: {
+        fetch: async () => [],
+      },
+      send: async () => {
+        legitimateCardSent = true;
+        return {
+          id: "bot-card-cyber",
+          pinned: false,
+          pin: async () => {},
+        };
+      },
+    };
+
+    const mockForum: any = {
+      id: "forum-general",
+      type: ChannelType.GuildForum,
+      threads: {
+        fetchActive: async () => ({
+          threads: new Map([
+            ["thread-minecraft-server", generalApprovedThread],
+            ["thread-cyberpunk-nook", legitimateRebrandThread],
+          ]),
+        }),
+        fetchArchived: async () => ({ threads: new Map() }),
+      },
+    };
+
+    const mockGuild: any = {
+      id: guildId,
+      name: "Filter Guild",
+      ownerId: "guild-owner",
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "forum-general") return mockForum;
+          if (id === "thread-minecraft-server") return generalApprovedThread;
+          if (id === "thread-cyberpunk-nook") return legitimateRebrandThread;
+          return null;
+        },
+      },
+    };
+
+    generalApprovedThread.guild = mockGuild;
+    legitimateRebrandThread.guild = mockGuild;
+
+    const report = await recoveryService.syncGuild(mockGuild, db);
+
+    // Only the 1 legitimate rebrand thread should be processed as a proposal
+    expect(report.proposalsCreated).toBe(1);
+    expect(report.threadsProcessed).toBe(1);
+    expect(legitimateCardSent).toBe(true);
+
+    // Erroneous card in the general suggestion thread must have been retroactively deleted
+    expect(wrongCardDeleted).toBe(true);
+    expect(pinNotificationDeleted).toBe(true);
+
+    // Verify database only has the legitimate proposal
+    const proposals = db.getAllProposals(guildId);
+    expect(proposals.length).toBe(1);
+    expect(proposals[0]?.thread_id).toBe("thread-cyberpunk-nook");
+    expect(db.getProposalByThreadId("thread-minecraft-server")).toBeNull();
+  });
 });

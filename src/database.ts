@@ -616,6 +616,11 @@ export class RebrandDatabase {
     return this.getProposal(id);
   }
 
+  public deleteProposal(id: number): boolean {
+    const info = this.db.prepare("DELETE FROM proposals WHERE id = ?").run(id);
+    return info.changes > 0;
+  }
+
   public getAllProposals(guildId: string): ProposalWithVotes[] {
     const rows = this.db.query(
       "SELECT * FROM proposals WHERE guild_id = ? ORDER BY id ASC"

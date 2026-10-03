@@ -223,6 +223,15 @@ export async function syncThreadProposal(
 
   let proposal = db.getProposalByThreadId(thread.id);
   if (!proposal) {
+    const hasRebrandTag = Boolean(
+      settings.rebrand_tag_id && thread.appliedTags?.includes(settings.rebrand_tag_id)
+    );
+    if (!hasRebrandTag) {
+      console.warn(
+        `[ThreadSync] Thread "${thread.name}" (${thread.id}) does not have rebrand tag ${settings.rebrand_tag_id}. Refusing to create proposal.`
+      );
+      return { proposal: null as any, created: false, pinned: false, notified: false };
+    }
     proposal = db.getOrCreateProposalForThread(guild.id, thread.id, ownerId);
     created = true;
     console.log(`[ThreadSync] Created new proposal #${proposal.id} for thread ${thread.id} (Owner: ${ownerId})`);

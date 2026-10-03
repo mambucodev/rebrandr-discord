@@ -20,9 +20,44 @@ export interface RecoverySyncReport {
 
 export class RecoveryService {
   /**
+   * Deletes any wrong bot proposal cards or pin notifications in a thread
+   * that does NOT qualify as a rebrand proposal.
+   */
+  public async cleanupWrongBotMessagesInThread(thread: ThreadChannel): Promise<number> {
+    const botId = thread.client?.user?.id;
+    if (!botId || !thread.messages?.fetch) return 0;
+    let deletedCount = 0;
+    try {
+      const messages = await thread.messages.fetch({ limit: 25 }).catch(() => null);
+      if (!messages) return 0;
+      for (const [, m] of messages) {
+        const isBotProposalCard =
+          m.author?.id === botId &&
+          (m.embeds?.some((e) => e.title?.includes("Proposal #") || e.title?.includes("Pending Rebrand")) || false);
+        const isPinNotification = m.type === 24 && m.deletable;
+
+        if (isBotProposalCard && typeof m.delete === "function") {
+          console.log(
+            `[Recovery] Deleting wrong bot proposal card message ${m.id} in non-rebrand thread "${thread.name}" (${thread.id})`
+          );
+          await m.delete().catch(() => null);
+          deletedCount++;
+        } else if (isPinNotification && typeof m.delete === "function") {
+          await m.delete().catch(() => null);
+          deletedCount++;
+        }
+      }
+    } catch (err) {
+      console.warn(`[Recovery] Could not clean messages in thread ${thread.id}:`, err);
+    }
+    return deletedCount;
+  }
+
+  /**
    * Retroactively synchronizes a guild after downtime:
    * - Scans forum channel for active & recent archived threads with the rebrand tag.
    * - Scans pending proposals in the database to sync reaction counts or clean deleted threads.
+   * - Retroactively cleans up and deletes wrong proposal cards posted into non-rebrand threads.
    */
   public async syncGuild(guild: Guild, db: RebrandDatabase = database): Promise<RecoverySyncReport> {
     console.log(`[Recovery] Starting retroactive sync for guild "${guild.name}" (${guild.id})...`);
@@ -46,30 +81,68 @@ export class RecoveryService {
         const forum = forumChannel as ForumChannel;
 
         const activeResult = await forum.threads.fetchActive().catch(() => null);
-        const threadsToProcess: ThreadChannel[] = [];
+        const archivedResult = await forum.threads.fetchArchived({ limit: 50 }).catch(() => null);
 
-        const statusTags = new Set(
-          [settings.rebrand_tag_id, settings.approved_tag_id, settings.declined_tag_id].filter(Boolean) as string[]
-        );
-
+        const allForumThreads: ThreadChannel[] = [];
         if (activeResult?.threads) {
           for (const [, thread] of activeResult.threads) {
-            if (thread.appliedTags && thread.appliedTags.some((tag) => statusTags.has(tag))) {
-              threadsToProcess.push(thread);
+            allForumThreads.push(thread);
+          }
+        }
+        if (archivedResult?.threads) {
+          for (const [, thread] of archivedResult.threads) {
+            if (!activeResult?.threads.has(thread.id)) {
+              allForumThreads.push(thread);
             }
           }
         }
 
-        const archivedResult = await forum.threads.fetchArchived({ limit: 50 }).catch(() => null);
-        if (archivedResult?.threads) {
-          for (const [, thread] of archivedResult.threads) {
-            if (
-              thread.appliedTags &&
-              thread.appliedTags.some((tag) => statusTags.has(tag)) &&
-              !activeResult?.threads.has(thread.id)
-            ) {
+        const threadsToProcess: ThreadChannel[] = [];
+
+        for (const thread of allForumThreads) {
+          const hasRebrandTag = Boolean(
+            settings.rebrand_tag_id && thread.appliedTags?.includes(settings.rebrand_tag_id)
+          );
+          const existingProposal = db.getProposalByThreadId(thread.id);
+
+          if (hasRebrandTag) {
+            // Legitimate active rebrand proposal
+            threadsToProcess.push(thread);
+          } else if (existingProposal) {
+            // Does not have rebrand tag, but proposal exists in DB
+            const isApproved =
+              (existingProposal.status === "approved" ||
+                existingProposal.status === "active" ||
+                existingProposal.status === "completed") &&
+              Boolean(settings.approved_tag_id && thread.appliedTags?.includes(settings.approved_tag_id));
+
+            const isDeclined =
+              existingProposal.status === "rejected" &&
+              Boolean(settings.declined_tag_id && thread.appliedTags?.includes(settings.declined_tag_id));
+
+            if (isApproved || isDeclined) {
+              // Legitimate resolved rebrand proposal whose tag transitioned to approved/declined
               threadsToProcess.push(thread);
+            } else {
+              // Pending proposal without rebrand tag (e.g. erroneously created or tag stripped by mod)
+              console.log(
+                `[Recovery] Pending proposal #${existingProposal.id} in thread "${thread.name}" (${thread.id}) lacks rebrand tag. Cleaning up...`
+              );
+              db.cancelProposal(existingProposal.id);
+              report.staleProposalsCleaned++;
+              processedThreadIds.add(thread.id);
+
+              if (existingProposal.message_id) {
+                const cardMsg = await thread.messages.fetch(existingProposal.message_id).catch(() => null);
+                if (cardMsg && typeof cardMsg.delete === "function") {
+                  await cardMsg.delete().catch(() => null);
+                }
+              }
+              await this.cleanupWrongBotMessagesInThread(thread);
             }
+          } else {
+            // Non-rebrand thread and not tracked in DB: ensure no accidental proposal cards exist
+            await this.cleanupWrongBotMessagesInThread(thread);
           }
         }
 
@@ -110,13 +183,18 @@ export class RecoveryService {
 
       // Check if rebrand tag was removed by a moderator while offline
       const hasRebrand = Boolean(settings.rebrand_tag_id && thread.appliedTags?.includes(settings.rebrand_tag_id));
-      const hasApproved = Boolean(settings.approved_tag_id && thread.appliedTags?.includes(settings.approved_tag_id));
-      const hasDeclined = Boolean(settings.declined_tag_id && thread.appliedTags?.includes(settings.declined_tag_id));
 
-      if (!hasRebrand && !hasApproved && !hasDeclined) {
-        console.log(`[Recovery] Rebrand tag was removed by moderator from thread ${thread.id} while offline. Cancelling proposal #${proposal.id}...`);
+      if (!hasRebrand) {
+        console.log(`[Recovery] Rebrand tag was removed by moderator or absent on thread ${thread.id}. Cancelling proposal #${proposal.id}...`);
         db.cancelProposal(proposal.id);
         report.staleProposalsCleaned++;
+        if (proposal.message_id) {
+          const cardMsg = await thread.messages.fetch(proposal.message_id).catch(() => null);
+          if (cardMsg && typeof cardMsg.delete === "function") {
+            await cardMsg.delete().catch(() => null);
+          }
+        }
+        await this.cleanupWrongBotMessagesInThread(thread);
         continue;
       }
 
@@ -138,10 +216,26 @@ export class RecoveryService {
       if (!proposal.thread_id || processedThreadIds.has(proposal.thread_id)) {
         continue;
       }
+      if (proposal.status === "cancelled") {
+        continue;
+      }
 
       try {
         const thread = (await guild.channels.fetch(proposal.thread_id).catch(() => null)) as ThreadChannel | null;
         if (!thread) continue;
+
+        const hasRebrand = Boolean(settings.rebrand_tag_id && thread.appliedTags?.includes(settings.rebrand_tag_id));
+        const isApproved =
+          (proposal.status === "approved" || proposal.status === "active" || proposal.status === "completed") &&
+          Boolean(settings.approved_tag_id && thread.appliedTags?.includes(settings.approved_tag_id));
+        const isDeclined =
+          proposal.status === "rejected" &&
+          Boolean(settings.declined_tag_id && thread.appliedTags?.includes(settings.declined_tag_id));
+
+        if (!hasRebrand && !isApproved && !isDeclined) {
+          continue;
+        }
+
         processedThreadIds.add(thread.id);
 
         if (proposal.message_id) {
@@ -149,8 +243,7 @@ export class RecoveryService {
           if (cardMsg && typeof cardMsg.edit === "function") {
             const embed = createProposalEmbed(proposal, settings.min_upvotes);
             const row = createProposalActionRow(proposal, settings.min_upvotes);
-            const components = proposal.status === "cancelled" ? [] : [row];
-            await cardMsg.edit({ embeds: [embed], components }).catch(() => null);
+            await cardMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
             console.log(`[Recovery] Retroactively updated card message for proposal #${proposal.id} in thread ${thread.id}`);
           }
         }
