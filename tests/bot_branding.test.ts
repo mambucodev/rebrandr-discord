@@ -100,4 +100,67 @@ describe("Bot Branding Synchronization (Nickname & PFP)", () => {
     expect(mockGuild.client.user.setAvatar).toHaveBeenCalled();
     expect(globalAvatarBuffer as Buffer | null).toEqual(testIconBuf);
   });
+
+  it("synchronizes the Discord application icon for slash commands autocomplete list", async () => {
+    let appIconBuffer: Buffer | null = null;
+    const testIconBuf = Buffer.from("app-icon-image-data-unique-1");
+
+    const mockGuild: any = {
+      id: "guild-brand-app-test",
+      name: "Snug Nook",
+      iconURL: () => null,
+      members: {
+        me: { nickname: "Snug Nook Rebrandr" },
+        editMe: mock(async () => ({})),
+      },
+      client: {
+        user: { setAvatar: mock(async () => {}) },
+        application: {
+          edit: mock(async (options: any) => {
+            appIconBuffer = options.icon;
+            return {};
+          }),
+        },
+      },
+    };
+
+    await rebrandService.syncBotBranding(mockGuild, undefined, testIconBuf);
+
+    expect(mockGuild.client.application.edit).toHaveBeenCalled();
+    expect(appIconBuffer as Buffer | null).toEqual(testIconBuf);
+  });
+
+  it("skips redundant Discord REST avatar and app icon updates if hash is identical", async () => {
+    const editMeMock = mock(async () => ({}));
+    const setAvatarMock = mock(async () => ({}));
+    const appEditMock = mock(async () => ({}));
+    const testIconBuf = Buffer.from("dedup-icon-unique-2");
+
+    const mockGuild: any = {
+      id: "guild-brand-dedup",
+      name: "Snug Nook",
+      iconURL: () => null,
+      members: {
+        me: { nickname: "Snug Nook Rebrandr" },
+        editMe: editMeMock,
+      },
+      client: {
+        user: { setAvatar: setAvatarMock },
+        application: { edit: appEditMock },
+      },
+    };
+
+    // First call: should trigger updates
+    await rebrandService.syncBotBranding(mockGuild, undefined, testIconBuf);
+    expect(editMeMock).toHaveBeenCalledTimes(1);
+    expect(setAvatarMock).toHaveBeenCalledTimes(1);
+    expect(appEditMock).toHaveBeenCalledTimes(1);
+
+    // Second call with same buffer: should be deduplicated and skipped
+    await rebrandService.syncBotBranding(mockGuild, undefined, testIconBuf);
+    expect(editMeMock).toHaveBeenCalledTimes(1);
+    expect(setAvatarMock).toHaveBeenCalledTimes(1);
+    expect(appEditMock).toHaveBeenCalledTimes(1);
+  });
 });
+

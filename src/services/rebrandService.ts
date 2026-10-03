@@ -1,6 +1,7 @@
 import { Guild, TextChannel, ChannelType, Message, ActionRowBuilder, ButtonBuilder } from "discord.js";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { database } from "../database";
 import type { Proposal, ProposalWithVotes, GuildSettings } from "../database";
 import { config } from "../config";
@@ -15,6 +16,8 @@ import {
 } from "./announcement";
 
 export class RebrandService {
+  private lastSyncedGuildAvatarHash = new Map<string, string>();
+  private lastSyncedGlobalAvatarHash: string | null = null;
   /**
    * Downloads an image, validates its format and magic bytes locally, and caches it to disk.
    */
@@ -278,54 +281,114 @@ export class RebrandService {
       console.warn(`[BotBranding] Could not update nickname in "${guild.name}":`, nickErr);
     }
 
-    // 2. Sync profile picture (PFP) to match the server's icon
+    // 2. Sync profile picture (PFP) and application icon to match the server's icon
     try {
       let iconBuf: Buffer | null = overrideIconBuffer || null;
 
       if (!iconBuf) {
         const settings = database.getGuildSettings(guild.id);
-        if (settings.default_icon_path && fs.existsSync(settings.default_icon_path)) {
-          try {
-            iconBuf = fs.readFileSync(settings.default_icon_path);
-          } catch {}
+
+        // Priority 1: If an active proposal is running, check if its cached icon exists
+        if (settings.active_proposal_id) {
+          const activeProp = database.getProposal(settings.active_proposal_id);
+          if (activeProp?.icon_path && fs.existsSync(activeProp.icon_path)) {
+            try {
+              iconBuf = fs.readFileSync(activeProp.icon_path);
+            } catch {}
+          } else if (activeProp?.icon_url) {
+            try {
+              const res = await this.downloadAndCacheImage(activeProp.icon_url, `active_pfp_${guild.id}`);
+              iconBuf = res.buffer;
+            } catch {}
+          }
         }
 
+        // Priority 2: Use current server live icon
         if (!iconBuf) {
-          const iconUrl = guild.iconURL({ extension: "png", size: 1024 }) || settings.default_icon_url;
-          if (iconUrl) {
+          const liveIconUrl = guild.iconURL({ extension: "png", size: 1024 });
+          if (liveIconUrl) {
             try {
-              console.log(`[BotBranding] Downloading server icon for bot PFP from ${iconUrl}...`);
-              const res = await this.downloadAndCacheImage(iconUrl, `pfp_${guild.id}`);
+              console.log(`[BotBranding] Downloading server icon for bot PFP from ${liveIconUrl}...`);
+              const res = await this.downloadAndCacheImage(liveIconUrl, `pfp_${guild.id}`);
               iconBuf = res.buffer;
             } catch (dlErr) {
               console.warn(`[BotBranding] Failed downloading guild icon for pfp:`, dlErr);
             }
           }
         }
+
+        // Priority 3: Fall back to default baseline backup if no active rebrand and guild has no icon
+        if (!iconBuf) {
+          if (settings.default_icon_path && fs.existsSync(settings.default_icon_path)) {
+            try {
+              iconBuf = fs.readFileSync(settings.default_icon_path);
+            } catch {}
+          } else if (settings.default_icon_url) {
+            try {
+              const res = await this.downloadAndCacheImage(settings.default_icon_url, `default_pfp_${guild.id}`);
+              iconBuf = res.buffer;
+            } catch {}
+          }
+        }
       }
 
       if (iconBuf) {
-        let serverAvatarUpdated = false;
-        // Attempt server-specific member avatar first
-        if (typeof (guild.members as any).editMe === "function") {
-          try {
-            await (guild.members as any).editMe({ avatar: iconBuf, reason: "Sync bot pfp to server icon" });
-            serverAvatarUpdated = true;
-            console.log(`[BotBranding] Updated server avatar in guild "${guild.name}" to match server icon`);
-          } catch (memberAvatarErr) {
-            // Server-specific avatar requires Boost Level or Nitro; fallback to global user avatar
-            serverAvatarUpdated = false;
+        const iconHash = crypto.createHash("md5").update(iconBuf).digest("hex");
+
+        // 2a. Update server-specific member avatar (per-guild pfp)
+        if (this.lastSyncedGuildAvatarHash.get(guild.id) !== iconHash) {
+          if (typeof (guild.members as any).editMe === "function") {
+            try {
+              await (guild.members as any).editMe({ avatar: iconBuf, reason: "Sync bot pfp to server icon" });
+              this.lastSyncedGuildAvatarHash.set(guild.id, iconHash);
+              console.log(`[BotBranding] Updated server avatar in guild "${guild.name}" to match server icon`);
+            } catch (memberAvatarErr) {
+              console.warn(`[BotBranding] Could not update server member avatar (may require Boost Level or Nitro):`, memberAvatarErr);
+            }
           }
         }
 
-        // If server-specific avatar not available, update the bot's global avatar
-        if (!serverAvatarUpdated && guild.client.user && typeof guild.client.user.setAvatar === "function") {
-          try {
-            await guild.client.user.setAvatar(iconBuf);
-            console.log(`[BotBranding] Updated bot avatar to match server icon`);
-          } catch (globalAvatarErr) {
-            console.warn(`[BotBranding] Could not update global bot avatar:`, globalAvatarErr);
+        // 2b. Update global bot user avatar and Discord application icon (used in slash command list)
+        if (this.lastSyncedGlobalAvatarHash !== iconHash) {
+          if (guild.client.user && typeof guild.client.user.setAvatar === "function") {
+            try {
+              await guild.client.user.setAvatar(iconBuf);
+              console.log(`[BotBranding] Updated global bot avatar to match server icon`);
+            } catch (globalAvatarErr) {
+              console.warn(`[BotBranding] Could not update global bot avatar:`, globalAvatarErr);
+            }
           }
+
+          if (guild.client.application && typeof guild.client.application.edit === "function") {
+            try {
+              await guild.client.application.edit({ icon: iconBuf });
+              console.log(`[BotBranding] Updated application icon for slash command autocomplete list`);
+            } catch (appErr) {
+              console.warn(`[BotBranding] Could not update application icon:`, appErr);
+            }
+          }
+
+          this.lastSyncedGlobalAvatarHash = iconHash;
+        }
+      } else if (overrideIconBuffer === null) {
+        // Explicitly clearing icon (e.g. reverting to default baseline with no icon)
+        const clearHash = "none";
+        if (this.lastSyncedGuildAvatarHash.get(guild.id) !== clearHash) {
+          if (typeof (guild.members as any).editMe === "function") {
+            try {
+              await (guild.members as any).editMe({ avatar: null, reason: "Reset bot pfp to none" });
+              this.lastSyncedGuildAvatarHash.set(guild.id, clearHash);
+            } catch {}
+          }
+        }
+        if (this.lastSyncedGlobalAvatarHash !== clearHash) {
+          if (guild.client.user && typeof guild.client.user.setAvatar === "function") {
+            try { await guild.client.user.setAvatar(null); } catch {}
+          }
+          if (guild.client.application && typeof guild.client.application.edit === "function") {
+            try { await guild.client.application.edit({ icon: null }); } catch {}
+          }
+          this.lastSyncedGlobalAvatarHash = clearHash;
         }
       }
     } catch (pfpErr) {
