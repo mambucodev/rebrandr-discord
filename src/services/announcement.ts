@@ -16,6 +16,8 @@ import {
   ChatInputCommandInteraction,
   ButtonInteraction,
   MessageFlags,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
 } from "discord.js";
 import type { Proposal, ProposalWithVotes, Suggestion, GuildSettings } from "../database";
 import { formatWeekendDate } from "../utils/dateUtils";
@@ -30,12 +32,23 @@ import { config } from "../config";
  */
 export function embedToContainer(
   embedOrContainer: EmbedBuilder | ContainerBuilder,
-  actionRows: ActionRowBuilder<any>[] | ActionRowBuilder<any> = []
+  actionRows: ActionRowBuilder<any>[] | ActionRowBuilder<any> = [],
+  options?: ContainerPayloadOptions
 ): ContainerBuilder {
   if (embedOrContainer instanceof ContainerBuilder) {
     const rows = Array.isArray(actionRows) ? actionRows : [actionRows];
     if (rows.length > 0) {
       embedOrContainer.addActionRowComponents(...rows);
+    }
+    if (options?.galleryImages && options.galleryImages.length > 0) {
+      const validUrls = options.galleryImages.filter(Boolean);
+      if (validUrls.length > 0) {
+        embedOrContainer.addMediaGalleryComponents(
+          new MediaGalleryBuilder().addItems(
+            ...validUrls.map((url) => new MediaGalleryItemBuilder().setURL(url))
+          )
+        );
+      }
     }
     return embedOrContainer;
   }
@@ -48,23 +61,86 @@ export function embedToContainer(
     container.setAccentColor(data.color);
   }
 
-  const textParts: string[] = [];
+  // 1. Break down description by markdown horizontal rules (--- or ___) if present
+  let descBlocks: string[] = [];
+  if (data.description) {
+    descBlocks = data.description
+      .split(/(?:^|\n)\s*(?:---+|___+)\s*(?:\n|$)/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  // 2. Top section: Author + Title + First block of description
+  const headerLines: string[] = [];
   if (data.author?.name) {
-    textParts.push(`**${data.author.name}**`);
+    headerLines.push(`**${data.author.name}**`);
   }
   if (data.title) {
-    textParts.push(`## ${data.title}`);
+    headerLines.push(`## ${data.title}`);
   }
-  if (data.description) {
-    textParts.push(data.description);
+  if (descBlocks.length > 0 && descBlocks[0]) {
+    headerLines.push(descBlocks[0]);
   }
-  if (data.fields && data.fields.length > 0) {
-    if (textParts.length > 0) textParts.push("");
-    for (const field of data.fields) {
-      textParts.push(`**${field.name}**\n${field.value}`);
+
+  const topText = headerLines.join("\n");
+  if (data.thumbnail?.url) {
+    const section = new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(topText || " "))
+      .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: data.thumbnail.url } }));
+    container.addSectionComponents(section);
+  } else if (topText.trim().length > 0) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(topText));
+  }
+
+  // 3. Subsequent description blocks separated by native dividers
+  for (let i = 1; i < descBlocks.length; i++) {
+    const block = descBlocks[i];
+    if (block) {
+      container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
+      );
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(block));
     }
   }
 
+  // 4. Fields: clean layout with native divider before fields
+  if (data.fields && data.fields.length > 0) {
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
+    );
+
+    const normalFieldTexts: string[] = [];
+    for (const field of data.fields) {
+      // Check if field is a standalone markdown link, e.g. [Label](https://...)
+      const linkMatch = field.value.match(/^\[(.*?)\]\((https?:\/\/[^\s)]+)\)$/);
+      if (linkMatch && linkMatch[1] && linkMatch[2]) {
+        if (normalFieldTexts.length > 0) {
+          container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(normalFieldTexts.join("\n\n"))
+          );
+          normalFieldTexts.length = 0;
+        }
+        const label = linkMatch[1];
+        const url = linkMatch[2];
+        const linkSection = new SectionBuilder()
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${field.name}**`))
+          .setButtonAccessory(
+            new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(url)
+          );
+        container.addSectionComponents(linkSection);
+      } else {
+        normalFieldTexts.push(`**${field.name}**\n${field.value}`);
+      }
+    }
+
+    if (normalFieldTexts.length > 0) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(normalFieldTexts.join("\n\n"))
+      );
+    }
+  }
+
+  // 5. Footer & timestamp
   const footerParts: string[] = [];
   if (data.footer?.text) {
     footerParts.push(data.footer.text);
@@ -76,22 +152,25 @@ export function embedToContainer(
     }
   }
   if (footerParts.length > 0) {
-    textParts.push("");
-    textParts.push(`-# ${footerParts.join(" • ")}`);
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)
+    );
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`-# ${footerParts.join(" • ")}`)
+    );
   }
 
-  const fullText = textParts.join("\n");
-
-  if (data.thumbnail?.url) {
-    const section = new SectionBuilder()
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent(fullText || " "))
-      .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: data.thumbnail.url } }));
-    container.addSectionComponents(section);
-  } else if (fullText.trim().length > 0) {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(fullText));
-  }
-
-  if (data.image?.url) {
+  // 6. Media Gallery (multi-image Before & After or single image)
+  if (options?.galleryImages && options.galleryImages.length > 0) {
+    const validUrls = options.galleryImages.filter(Boolean);
+    if (validUrls.length > 0) {
+      container.addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems(
+          ...validUrls.map((url) => new MediaGalleryItemBuilder().setURL(url))
+        )
+      );
+    }
+  } else if (data.image?.url) {
     container.addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(
         new MediaGalleryItemBuilder().setURL(data.image.url)
@@ -99,6 +178,7 @@ export function embedToContainer(
     );
   }
 
+  // 7. Nested Action Rows (Buttons & Select Menus inside card)
   const rows = Array.isArray(actionRows) ? actionRows : [actionRows];
   if (rows.length > 0) {
     container.addActionRowComponents(...rows);
@@ -109,6 +189,7 @@ export function embedToContainer(
 
 export interface ContainerPayloadOptions {
   ephemeral?: boolean;
+  galleryImages?: string[];
 }
 
 /**
@@ -120,7 +201,7 @@ export function toContainerPayload(
   actionRows: ActionRowBuilder<any>[] | ActionRowBuilder<any> = [],
   options?: ContainerPayloadOptions
 ): { components: [ContainerBuilder]; flags: any } {
-  const container = embedToContainer(embedOrContainer, actionRows);
+  const container = embedToContainer(embedOrContainer, actionRows, options);
   let flags: number = MessageFlags.IsComponentsV2;
   if (options?.ephemeral) {
     flags |= MessageFlags.Ephemeral;
@@ -136,9 +217,10 @@ export function toContainerPayload(
  */
 export function toContainerUpdatePayload(
   embedOrContainer: EmbedBuilder | ContainerBuilder,
-  actionRows: ActionRowBuilder<any>[] | ActionRowBuilder<any> = []
+  actionRows: ActionRowBuilder<any>[] | ActionRowBuilder<any> = [],
+  options?: ContainerPayloadOptions
 ): { components: [ContainerBuilder]; flags: any } {
-  const container = embedToContainer(embedOrContainer, actionRows);
+  const container = embedToContainer(embedOrContainer, actionRows, options);
   return {
     components: [container],
     flags: MessageFlags.IsComponentsV2 as any,
@@ -159,9 +241,14 @@ export function getContainerText(containerOrPayload: any): string {
   const texts: string[] = [];
   for (const c of container.components || []) {
     if (c.type === 10 && typeof c.content === "string") texts.push(c.content);
-    if (c.type === 9 && Array.isArray(c.components)) {
-      for (const sub of c.components) {
-        if (sub.type === 10 && typeof sub.content === "string") texts.push(sub.content);
+    if (c.type === 9) {
+      if (Array.isArray(c.components)) {
+        for (const sub of c.components) {
+          if (sub.type === 10 && typeof sub.content === "string") texts.push(sub.content);
+        }
+      }
+      if (c.accessory && typeof c.accessory === "object") {
+        if (c.accessory.label) texts.push(c.accessory.label);
       }
     }
   }
@@ -238,31 +325,32 @@ export function createProposalEmbed(proposal: ProposalWithVotes, minUpvotes: num
     ? `> *${proposal.topic}*`
     : `> *No theme description provided yet. Click "Edit Details" below to add one!*`;
 
-  const lines = [
-    `### Status: ${statusText}`,
-    "",
-    themeText,
-    "",
+  const detailsLines = [
     "### Details",
     `• **Creator:** <@${proposal.user_id}>`,
     `• **Icon:** ${hasIcon ? "Uploaded" : "Not Uploaded"}`,
   ];
 
   if (proposal.scheduled_date) {
-    lines.push(`• **Target Weekend:** ${formatWeekendDate(proposal.scheduled_date)}`);
+    detailsLines.push(`• **Target Weekend:** ${formatWeekendDate(proposal.scheduled_date)}`);
   }
 
-  lines.push(
-    "",
+  const votingLines = [
     "### Voting",
     `⬆️ **${proposal.upvotes_count}**   •   ⬇️ **${proposal.downvotes_count}**   •   Net: **${proposal.net_votes}**`,
     "",
-    progressBar
-  );
+    progressBar,
+  ];
+
+  const sections = [
+    `### Status: ${statusText}\n\n${themeText}`,
+    detailsLines.join("\n"),
+    votingLines.join("\n"),
+  ];
 
   const embed = new EmbedBuilder()
     .setTitle(`Proposal #${proposal.id} — ${proposal.name}`)
-    .setDescription(lines.join("\n"))
+    .setDescription(sections.join("\n\n---\n\n"))
     .setColor(statusColor)
     .setTimestamp(new Date(proposal.created_at))
     .setFooter({
@@ -617,26 +705,28 @@ export function createProposalCarouselEmbed(
     ? "✅ Uploaded & Ready"
     : "⚠️ Not Uploaded Yet *(Submitter can use `/rebrand upload`)*";
 
-  const lines = [
-    `### Status: ${statusBadge}`,
-    "",
-    proposal.topic ? `> *${proposal.topic}*` : `> *No theme description provided.*`,
-    "",
+  const statusSection = `### Status: ${statusBadge}\n\n${
+    proposal.topic ? `> *${proposal.topic}*` : `> *No theme description provided.*`
+  }`;
+
+  const detailsSection = [
     "### Details",
     `• **Creator:** <@${proposal.user_id}>`,
     `• **Forum Thread:** ${threadLink}`,
     `• **Server Icon:** ${iconText}`,
-    "",
+  ].join("\n");
+
+  const votingSection = [
     "### Voting",
     `⬆️ **${proposal.upvotes_count}**   •   ⬇️ **${proposal.downvotes_count}**   •   Net: **${proposal.net_votes >= 0 ? "+" : ""}${proposal.net_votes}**`,
     "",
     createVoteProgressBar(proposal.upvotes_count, minUpvotes),
-  ];
+  ].join("\n");
 
   const embed = new EmbedBuilder()
     .setAuthor({ name: "COMMUNITY PROPOSALS BROWSER" })
     .setTitle(`Proposal #${proposal.id} — ${proposal.name}`)
-    .setDescription(lines.join("\n"))
+    .setDescription([statusSection, detailsSection, votingSection].join("\n\n---\n\n"))
     .setColor(statusColor)
     .setTimestamp(new Date(proposal.created_at))
     .setFooter({

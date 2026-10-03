@@ -11,6 +11,7 @@ import {
   createAdminLogApprovalEmbed,
   createAdminLogActionRow,
   toContainerPayload,
+  type ContainerPayloadOptions,
 } from "./announcement";
 
 export class RebrandService {
@@ -133,7 +134,15 @@ export class RebrandService {
       const now = new Date().toISOString();
       (database as any).db?.run("UPDATE proposals SET status = 'active' WHERE id = ?", [proposal.id]);
 
-      await this.sendAdminLog(guild, createRebrandLiveEmbed(proposal, guild));
+      const settings = database.getGuildSettings(guild.id);
+      const baselineUrl = settings.default_icon_url || guild.iconURL();
+      const liveGallery = [baselineUrl, proposal.icon_url].filter(Boolean) as string[];
+      await this.sendAdminLog(
+        guild,
+        createRebrandLiveEmbed(proposal, guild),
+        undefined,
+        liveGallery.length > 1 ? { galleryImages: liveGallery } : undefined
+      );
       await this.syncBotBranding(guild, proposal.name, iconBuffer).catch(() => null);
       return true;
     } catch (err) {
@@ -194,7 +203,15 @@ export class RebrandService {
         try { revertIconBuf = fs.readFileSync(settings.default_icon_path); } catch {} 
       }
       await this.syncBotBranding(guild, settings.default_name || guild.name, revertIconBuf).catch(() => null);
-      await this.sendAdminLog(guild, createRebrandConcludedEmbed(activeProposal, guild));
+
+      const defaultIconUrl = settings.default_icon_url || guild.iconURL();
+      const concludedGallery = [activeProposal?.icon_url, defaultIconUrl].filter(Boolean) as string[];
+      await this.sendAdminLog(
+        guild,
+        createRebrandConcludedEmbed(activeProposal, guild),
+        undefined,
+        concludedGallery.length > 1 ? { galleryImages: concludedGallery } : undefined
+      );
       return true;
     } catch (err) {
       console.error(`[RebrandService] Error reverting rebrand:`, err);
@@ -205,7 +222,8 @@ export class RebrandService {
   public async sendAdminLog(
     guild: Guild,
     embed: any,
-    components?: ActionRowBuilder<ButtonBuilder>[]
+    components?: ActionRowBuilder<ButtonBuilder>[],
+    options?: ContainerPayloadOptions
   ): Promise<Message | null> {
     const settings = database.getGuildSettings(guild.id);
     let channel: TextChannel | null = null;
@@ -220,7 +238,7 @@ export class RebrandService {
     if (channel) {
       try {
         console.log(`[RebrandService] Sending admin log to channel #${channel.name} (${channel.id})`);
-        return await channel.send(toContainerPayload(embed, components || []));
+        return await channel.send(toContainerPayload(embed, components || [], options));
       } catch (err) {
         console.error(`[RebrandService] Failed to send admin log in channel ${channel.id}:`, err);
       }
