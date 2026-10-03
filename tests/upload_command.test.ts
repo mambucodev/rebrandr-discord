@@ -44,7 +44,42 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
     expect(replyPayload.embeds[0].data.description).toContain("Administrator");
   });
 
+  it("allows configured ADMIN_USER_ID to run admin-only subcommands even on servers they do not own or manage", async () => {
+    const originalEnv = process.env.ADMIN_USER_ID;
+    try {
+      process.env.ADMIN_USER_ID = "dev-admin-user";
+
+      let replyPayload: any = null;
+      const interactionMock: any = {
+        guild: {
+          id: "guild-foreign-1",
+          name: "Foreign Guild Not Owned",
+          ownerId: "someone-else-owner",
+          iconURL: () => null,
+        },
+        user: { id: "dev-admin-user", tag: "devadmin#0001" },
+        memberPermissions: new PermissionsBitField([]),
+        options: {
+          getSubcommand: () => "status",
+        },
+        reply: async (payload: any) => {
+          replyPayload = payload;
+        },
+      };
+
+      await handleRebrandAdminCommand(interactionMock);
+
+      expect(replyPayload).not.toBeNull();
+      // Should not be "Permission Denied"
+      expect(replyPayload.embeds[0].data.title).not.toBe("Permission Denied");
+      expect(replyPayload.embeds[0].data.title).toContain("Weekend Rebrand");
+    } finally {
+      process.env.ADMIN_USER_ID = originalEnv;
+    }
+  });
+
   it("rejects non-image file uploads in /rebrand upload", async () => {
+
     let replyPayload: any = null;
     const interactionMock: any = {
       guild: {

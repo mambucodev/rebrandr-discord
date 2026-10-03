@@ -24,6 +24,7 @@ import {
   createInfoEmbed,
   createForumTagConfigEmbedAndRows,
   createScheduleEmbed,
+  hasAdminPermission,
 } from "../services/announcement";
 import { formatWeekendDate } from "../utils/dateUtils";
 
@@ -649,17 +650,5 @@ export async function handleRebrandAdminCommand(
   }
 }
 
-export function hasAdminPermission(
-  interaction: ChatInputCommandInteraction | ButtonInteraction | any
-): boolean {
-  if (!interaction.guild) return false;
-  if (interaction.guild.ownerId === interaction.user?.id) return true;
+export { hasAdminPermission };
 
-  const permissions = interaction.memberPermissions;
-  if (!permissions) return false;
-
-  return (
-    permissions.has(PermissionsBitField.Flags.Administrator) ||
-    permissions.has(PermissionsBitField.Flags.ManageGuild)
-  );
-}

@@ -41,6 +41,11 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.log(`  • Guild: "${guild.name}" (ID: ${guild.id}) - Members: ${guild.memberCount}`);
   }
 
+  if (config.adminUserIds.length > 0) {
+    console.log(`[Bot] Dev admin user ID(s) configured: ${config.adminUserIds.join(", ")}`);
+  }
+
+
   // Start internal HTTP health server for Docker and Coolify container monitoring
   startHealthServer(readyClient);
 

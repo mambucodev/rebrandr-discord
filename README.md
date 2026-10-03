@@ -51,7 +51,12 @@ Every weekend (Saturday 00:00 UTC to Sunday 23:59 UTC / Monday 00:00 UTC), the b
 2. **Configure `.env`**:
    ```env
    DISCORD_TOKEN=your_bot_token_here
+
+   # (Optional) Dev/Testing Admin User ID(s)
+   # Allows specified Discord user ID(s) to test and run all admin commands across servers where they lack admin roles.
+   ADMIN_USER_ID=your_discord_user_id
    ```
+
 
 3. **Run the bot**:
    ```bash

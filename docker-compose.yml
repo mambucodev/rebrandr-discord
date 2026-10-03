@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - ADMIN_USER_ID=${ADMIN_USER_ID:-}
       - DATABASE_PATH=/app/data/rebrand.sqlite
       - ICONS_DIR=/app/data/icons
       - PORT=3000

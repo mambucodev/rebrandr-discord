@@ -143,4 +143,51 @@ describe("Announcement Embeds & Action Rows", () => {
     } as any;
     expect(hasAdminPermission(adminPermInteraction)).toBe(true);
   });
+
+  it("considers user configured in ADMIN_USER_ID as admin in any server", () => {
+    const originalEnv = process.env.ADMIN_USER_ID;
+    try {
+      process.env.ADMIN_USER_ID = "dev-admin-777";
+
+      const devInteractionInOtherServer = {
+        guild: { ownerId: "someone-elses-server-owner" },
+        user: { id: "dev-admin-777" },
+        memberPermissions: {
+          has: () => false,
+        },
+      } as any;
+
+      expect(hasAdminPermission(devInteractionInOtherServer)).toBe(true);
+
+      const regularUserInteraction = {
+        guild: { ownerId: "someone-elses-server-owner" },
+        user: { id: "regular-user-888" },
+        memberPermissions: {
+          has: () => false,
+        },
+      } as any;
+
+      expect(hasAdminPermission(regularUserInteraction)).toBe(false);
+    } finally {
+      process.env.ADMIN_USER_ID = originalEnv;
+    }
+  });
+
+  it("supports multiple user IDs in ADMIN_USER_ID or ADMIN_USER_IDS with whitespace/commas/quotes", () => {
+    const originalEnv = process.env.ADMIN_USER_ID;
+    try {
+      process.env.ADMIN_USER_ID = ' "dev-1", dev-2,  dev-3 ';
+
+      const mockGuild = { ownerId: "not-me" };
+      const nonAdminPerms = { has: () => false };
+
+      expect(hasAdminPermission({ guild: mockGuild, user: { id: "dev-1" }, memberPermissions: nonAdminPerms } as any)).toBe(true);
+      expect(hasAdminPermission({ guild: mockGuild, user: { id: "dev-2" }, memberPermissions: nonAdminPerms } as any)).toBe(true);
+      expect(hasAdminPermission({ guild: mockGuild, user: { id: "dev-3" }, memberPermissions: nonAdminPerms } as any)).toBe(true);
+      expect(hasAdminPermission({ guild: mockGuild, user: { id: "dev-4" }, memberPermissions: nonAdminPerms } as any)).toBe(false);
+    } finally {
+      process.env.ADMIN_USER_ID = originalEnv;
+    }
+  });
 });
+

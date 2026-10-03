@@ -50,6 +50,8 @@ You can deploy the bot using either **Dockerfile** or **Docker Compose**.
 | `ENABLE_HEALTH_SERVER` | Enable internal health check server (`true`/`false`) | `true` |
 | `DEFAULT_MIN_UPVOTES` | Default required net upvotes if not configured per-guild | `4` |
 | `SCHEDULER_INTERVAL_MS` | Frequency of weekend check loop in milliseconds | `30000` (30s) |
+| `ADMIN_USER_ID` | Discord user ID(s) granted dev bot admin bypass (comma-separated) | — |
+
 
 ---
 

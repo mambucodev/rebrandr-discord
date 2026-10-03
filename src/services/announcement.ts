@@ -12,6 +12,7 @@ import {
 } from "discord.js";
 import type { Proposal, ProposalWithVotes, Suggestion, GuildSettings } from "../database";
 import { formatWeekendDate } from "../utils/dateUtils";
+import { config } from "../config";
 
 export function createVoteProgressBar(current: number, target: number, barLength: number = 8): string {
   const clamped = Math.max(0, current);
@@ -513,10 +514,17 @@ export function createForumTagConfigEmbedAndRows(
 }
 
 export function hasAdminPermission(
-  interaction: ChatInputCommandInteraction | ButtonInteraction
+  interaction: ChatInputCommandInteraction | ButtonInteraction | any
 ): boolean {
   if (!interaction.guild) return false;
-  if (interaction.guild.ownerId === interaction.user.id) return true;
+
+  const userId =
+    interaction.user?.id ||
+    (interaction.member as any)?.user?.id ||
+    (interaction.member as any)?.id;
+
+  if (userId && config.adminUserIds.includes(userId)) return true;
+  if (userId && interaction.guild.ownerId === userId) return true;
 
   const permissions = interaction.memberPermissions;
   if (!permissions) return false;
@@ -526,3 +534,4 @@ export function hasAdminPermission(
     permissions.has(PermissionsBitField.Flags.ManageGuild)
   );
 }
+
