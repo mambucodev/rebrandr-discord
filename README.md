@@ -26,7 +26,8 @@ Every weekend (Saturday 00:00 UTC to Sunday 23:59 UTC / Monday 00:00 UTC), the b
 - `/propose <name> <icon> [topic]` — Propose a new weekend rebrand.
 - `/rebrand upload <icon> [id] [name] [topic]` — Upload and validate a custom server icon image for your proposal.
 - `/schedule` — View active and upcoming scheduled weekend rebrands.
-- `/proposals` — List pending proposals waiting for upvotes/approval.
+- `/proposals browse` — Interactively browse pending proposals one at a time with navigation arrows and admin action buttons.
+- `/proposals list` — View all pending proposals categorized by readiness (Ready for Approval, Missing Assets, In Progress) with direct thread links.
 
 ### Admin / Owner Commands (`/rebrand`)
 - `/rebrand config [announcement_channel] [proposals_channel] [min_upvotes]` — Configure announcement/proposals channels and upvote requirement (default: 5).

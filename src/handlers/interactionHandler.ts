@@ -31,6 +31,9 @@ import {
   createSuggestionActionRow,
   createConfirmationActionRow,
   createForumTagConfigEmbedAndRows,
+  createProposalCarouselEmbed,
+  createProposalCarouselActionRows,
+  categorizeAndSortProposals,
 } from "../services/announcement";
 import { formatWeekendDate } from "../utils/dateUtils";
 
@@ -142,6 +145,122 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
 async function handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
   const [action, idStr] = interaction.customId.split(":");
   const id = parseInt(idStr ?? "", 10);
+
+  // Proposal Carousel Navigation (First, Prev, Next, Last)
+  if (action === "rebrand_prop_nav") {
+    const [, subAction, targetIndexStr] = interaction.customId.split(":");
+    if (subAction === "noop") {
+      await interaction.deferUpdate();
+      return;
+    }
+    if (!interaction.guild) {
+      await interaction.deferUpdate();
+      return;
+    }
+
+    const targetIndex = parseInt(targetIndexStr ?? "0", 10);
+    const settings = database.getGuildSettings(interaction.guild.id);
+    const pending = database.getProposalsByStatus(interaction.guild.id, "pending");
+
+    if (pending.length === 0) {
+      const emptyEmbed = new EmbedBuilder()
+        .setAuthor({ name: "COMMUNITY PROPOSALS BROWSER" })
+        .setTitle(`🗳️ Proposals Queue — ${interaction.guild.name}`)
+        .setDescription(
+          "There are no pending proposals right now!\n\nPost your rebrand idea in the server's rebrand forum to get started."
+        )
+        .setColor(0x5865f2)
+        .setTimestamp();
+      await interaction.update({ embeds: [emptyEmbed], components: [] });
+      return;
+    }
+
+    const { allSorted } = categorizeAndSortProposals(pending, settings.min_upvotes);
+    const clampedIndex = Math.max(0, Math.min(targetIndex, allSorted.length - 1));
+    const proposal = allSorted[clampedIndex]!;
+
+    const embed = createProposalCarouselEmbed(
+      proposal,
+      settings.min_upvotes,
+      clampedIndex,
+      allSorted.length,
+      interaction.guild
+    );
+    const rows = createProposalCarouselActionRows(
+      proposal,
+      clampedIndex,
+      allSorted.length,
+      interaction.guild.id
+    );
+
+    await interaction.update({ embeds: [embed], components: rows });
+    return;
+  }
+
+  // Proposal Carousel Admin Actions (Approve & Reject)
+  if (action === "rebrand_prop_approve") {
+    if (!hasAdminPermission(interaction)) {
+      const errorEmbed = createErrorEmbed(
+        "Permission Denied",
+        "Only administrators can approve rebrand proposals."
+      );
+      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const proposal = database.getProposal(id);
+    if (!proposal) {
+      const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
+      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const confirmRow = createConfirmationActionRow("approve", proposal.id);
+    const confirmEmbed = new EmbedBuilder()
+      .setTitle("⚠️ Confirm Approval")
+      .setDescription(
+        `Are you sure you want to approve proposal **#${proposal.id} ("${proposal.name}")**?\n\nThis will schedule it for the next available weekend rebrand slot.`
+      )
+      .setColor(0xf1c40f);
+
+    await interaction.reply({
+      embeds: [confirmEmbed],
+      components: [confirmRow],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (action === "rebrand_prop_reject") {
+    if (!hasAdminPermission(interaction)) {
+      const errorEmbed = createErrorEmbed(
+        "Permission Denied",
+        "Only administrators can reject rebrand proposals."
+      );
+      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const proposal = database.getProposal(id);
+    if (!proposal) {
+      const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
+      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const confirmRow = createConfirmationActionRow("reject", proposal.id);
+    const confirmEmbed = new EmbedBuilder()
+      .setTitle("⚠️ Confirm Rejection")
+      .setDescription(`Are you sure you want to reject proposal **#${proposal.id} ("${proposal.name}")**?`)
+      .setColor(0xed4245);
+
+    await interaction.reply({
+      embeds: [confirmEmbed],
+      components: [confirmRow],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
 
   // Upload Icon button — instructs users to use /rebrand upload with attachment
   if (action === "rebrand_upload_icon") {

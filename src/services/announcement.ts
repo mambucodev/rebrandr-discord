@@ -319,26 +319,256 @@ export function createScheduleEmbed(proposals: ProposalWithVotes[], guild: Guild
   return embed;
 }
 
-export function createProposalsListEmbed(proposals: ProposalWithVotes[], guild: Guild, minUpvotes: number): EmbedBuilder {
+export function categorizeAndSortProposals(
+  proposals: ProposalWithVotes[],
+  minUpvotes: number
+): {
+  readyToApprove: ProposalWithVotes[];
+  goalReachedMissingAssets: ProposalWithVotes[];
+  votingInProgress: ProposalWithVotes[];
+  allSorted: ProposalWithVotes[];
+} {
+  const readyToApprove: ProposalWithVotes[] = [];
+  const goalReachedMissingAssets: ProposalWithVotes[] = [];
+  const votingInProgress: ProposalWithVotes[] = [];
+
+  for (const p of proposals) {
+    const hasIcon = Boolean(p.icon_url || p.icon_path);
+    const hasRequiredAssets = hasIcon && p.name && p.name !== "Pending Rebrand";
+
+    if (p.upvotes_count >= minUpvotes && hasRequiredAssets) {
+      readyToApprove.push(p);
+    } else if (p.upvotes_count >= minUpvotes) {
+      goalReachedMissingAssets.push(p);
+    } else {
+      votingInProgress.push(p);
+    }
+  }
+
+  const sortDesc = (a: ProposalWithVotes, b: ProposalWithVotes) => {
+    if (b.upvotes_count !== a.upvotes_count) return b.upvotes_count - a.upvotes_count;
+    if (b.net_votes !== a.net_votes) return b.net_votes - a.net_votes;
+    return a.id - b.id;
+  };
+
+  readyToApprove.sort(sortDesc);
+  goalReachedMissingAssets.sort(sortDesc);
+  votingInProgress.sort(sortDesc);
+
+  return {
+    readyToApprove,
+    goalReachedMissingAssets,
+    votingInProgress,
+    allSorted: [...readyToApprove, ...goalReachedMissingAssets, ...votingInProgress],
+  };
+}
+
+export function createProposalsListEmbed(
+  proposals: ProposalWithVotes[],
+  guild: Guild,
+  minUpvotes: number
+): EmbedBuilder {
   const embed = new EmbedBuilder()
     .setAuthor({ name: "COMMUNITY PROPOSALS QUEUE" })
-    .setTitle(`🗳️ Pending Rebrand Proposals — ${guild.name}`)
-    .setColor(0xffa502)
+    .setTitle(`🗳️ Rebrand Proposals Queue — ${guild.name}`)
+    .setColor(0x5865f2)
     .setTimestamp()
-    .setFooter({ text: `Required Upvotes: ${minUpvotes} + Admin Approval in Logs` });
+    .setFooter({
+      text: `Required Upvotes: ${minUpvotes} • Use "/proposals browse" for interactive view`,
+    });
 
   if (proposals.length === 0) {
-    embed.setDescription("There are no pending proposals right now. Create a forum thread with the rebrand tag!");
+    embed.setDescription(
+      "There are no pending proposals right now.\nPost your rebrand idea in the forum to get started!"
+    );
     return embed;
   }
 
-  const lines = proposals.map((p) => {
-    const readyForOwner = p.upvotes_count >= minUpvotes ? "⭐ **[Goal Met - Sent to Logs]**" : `⏳ (${p.upvotes_count}/${minUpvotes} upvotes)`;
-    return `• **#${p.id} — \`${p.name}\`**\n  Topic: ${p.topic || "*No topic*"} | By: <@${p.user_id}>\n  Reactions: ⬆️ ${p.upvotes_count} | ⬇️ ${p.downvotes_count} • Status: ${readyForOwner}`;
-  });
+  const { readyToApprove, goalReachedMissingAssets, votingInProgress } =
+    categorizeAndSortProposals(proposals, minUpvotes);
 
-  embed.setDescription(lines.join("\n\n"));
+  const formatProposalLine = (p: ProposalWithVotes, includeProgress: boolean = false): string => {
+    const threadLink = p.thread_id
+      ? `<#${p.thread_id}> ([Jump to Thread](https://discord.com/channels/${p.guild_id || guild.id}/${p.thread_id}))`
+      : "*No thread*";
+    const hasIcon = Boolean(p.icon_url || p.icon_path);
+    const iconBadge = hasIcon ? "🖼️ Icon: Ready" : "⚠️ Missing Icon";
+
+    const lines = [
+      `• **#${p.id} — \`${p.name}\`**`,
+      `  👤 <@${p.user_id}> | 🔗 ${threadLink}`,
+      `  🗳️ ⬆️ **${p.upvotes_count}** / ⬇️ **${p.downvotes_count}** (Net: **${p.net_votes >= 0 ? "+" : ""}${p.net_votes}**) • ${iconBadge}`,
+    ];
+
+    if (includeProgress) {
+      lines.push(`  ${createVoteProgressBar(p.upvotes_count, minUpvotes, 6)}`);
+    }
+
+    return lines.join("\n");
+  };
+
+  const sections: string[] = [];
+
+  // Section 1: Ready for Approval
+  const readyContent =
+    readyToApprove.length > 0
+      ? readyToApprove.map((p) => formatProposalLine(p)).join("\n\n")
+      : "*None currently in this tier.*";
+  sections.push(`### 👑 Ready for Approval (${readyToApprove.length})\n${readyContent}`);
+
+  // Section 2: Goal Reached, Missing Assets
+  const missingContent =
+    goalReachedMissingAssets.length > 0
+      ? goalReachedMissingAssets.map((p) => formatProposalLine(p)).join("\n\n")
+      : "*None currently in this tier.*";
+  sections.push(`### 🟡 Goal Reached — Missing Assets (${goalReachedMissingAssets.length})\n${missingContent}`);
+
+  // Section 3: In Progress / Voting Active
+  const votingContent =
+    votingInProgress.length > 0
+      ? votingInProgress.map((p) => formatProposalLine(p, true)).join("\n\n")
+      : "*None currently in this tier.*";
+  sections.push(`### ⏳ Voting in Progress (${votingInProgress.length})\n${votingContent}`);
+
+  embed.setDescription(sections.join("\n\n---\n\n"));
   return embed;
+}
+
+export function createProposalCarouselEmbed(
+  proposal: ProposalWithVotes,
+  minUpvotes: number,
+  index: number,
+  total: number,
+  guild: Guild
+): EmbedBuilder {
+  const hasIcon = Boolean(proposal.icon_url || proposal.icon_path);
+  const isReady = proposal.upvotes_count >= minUpvotes && hasIcon && proposal.name !== "Pending Rebrand";
+
+  let statusBadge = "⏳ Voting in Progress";
+  let statusColor = 0x5865f2;
+
+  if (isReady) {
+    statusBadge = "🟢 Ready for Admin Approval";
+    statusColor = 0x57f287;
+  } else if (proposal.upvotes_count >= minUpvotes) {
+    statusBadge = "🟡 Goal Reached — Needs Server Icon";
+    statusColor = 0xf1c40f;
+  }
+
+  const threadLink = proposal.thread_id
+    ? `<#${proposal.thread_id}> ([Jump to Thread](https://discord.com/channels/${proposal.guild_id || guild.id}/${proposal.thread_id}))`
+    : "*No thread linked*";
+
+  const iconText = hasIcon
+    ? "✅ Uploaded & Ready"
+    : "⚠️ Not Uploaded Yet *(Submitter can use `/rebrand upload`)*";
+
+  const lines = [
+    `### Status: ${statusBadge}`,
+    "",
+    proposal.topic ? `> *${proposal.topic}*` : `> *No theme description provided.*`,
+    "",
+    "### Details",
+    `• **Creator:** <@${proposal.user_id}>`,
+    `• **Forum Thread:** ${threadLink}`,
+    `• **Server Icon:** ${iconText}`,
+    "",
+    "### Voting",
+    `⬆️ **${proposal.upvotes_count}**   •   ⬇️ **${proposal.downvotes_count}**   •   Net: **${proposal.net_votes >= 0 ? "+" : ""}${proposal.net_votes}**`,
+    "",
+    createVoteProgressBar(proposal.upvotes_count, minUpvotes),
+  ];
+
+  const embed = new EmbedBuilder()
+    .setAuthor({ name: "COMMUNITY PROPOSALS BROWSER" })
+    .setTitle(`Proposal #${proposal.id} — ${proposal.name}`)
+    .setDescription(lines.join("\n"))
+    .setColor(statusColor)
+    .setTimestamp(new Date(proposal.created_at))
+    .setFooter({
+      text: `Proposal ${index + 1} of ${total} • Required Upvotes: ${minUpvotes} • Use buttons below to navigate & manage`,
+    });
+
+  if (proposal.icon_url) {
+    embed.setThumbnail(proposal.icon_url);
+  }
+
+  return embed;
+}
+
+export function createProposalCarouselActionRows(
+  proposal: ProposalWithVotes,
+  index: number,
+  total: number,
+  guildId: string
+): ActionRowBuilder<ButtonBuilder>[] {
+  const isFirst = index <= 0;
+  const isLast = index >= total - 1;
+
+  const firstBtn = new ButtonBuilder()
+    .setCustomId("rebrand_prop_nav:first:0")
+    .setLabel("⏮️")
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(isFirst);
+
+  const prevBtn = new ButtonBuilder()
+    .setCustomId(`rebrand_prop_nav:prev:${index - 1}`)
+    .setLabel("◀️ Prev")
+    .setStyle(ButtonStyle.Primary)
+    .setDisabled(isFirst);
+
+  const countBtn = new ButtonBuilder()
+    .setCustomId(`rebrand_prop_nav:noop:${index}`)
+    .setLabel(`${index + 1} / ${total}`)
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+
+  const nextBtn = new ButtonBuilder()
+    .setCustomId(`rebrand_prop_nav:next:${index + 1}`)
+    .setLabel("Next ▶️")
+    .setStyle(ButtonStyle.Primary)
+    .setDisabled(isLast);
+
+  const lastBtn = new ButtonBuilder()
+    .setCustomId(`rebrand_prop_nav:last:${total - 1}`)
+    .setLabel("⏭️")
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(isLast);
+
+  const navRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    firstBtn,
+    prevBtn,
+    countBtn,
+    nextBtn,
+    lastBtn
+  );
+
+  const actionRow = new ActionRowBuilder<ButtonBuilder>();
+
+  if (proposal.thread_id) {
+    const threadBtn = new ButtonBuilder()
+      .setLabel("View Thread")
+      .setStyle(ButtonStyle.Link)
+      .setURL(`https://discord.com/channels/${guildId}/${proposal.thread_id}`)
+      .setEmoji("🔗");
+    actionRow.addComponents(threadBtn);
+  }
+
+  const approveBtn = new ButtonBuilder()
+    .setCustomId(`rebrand_prop_approve:${proposal.id}:${index}`)
+    .setLabel("Approve & Schedule")
+    .setStyle(ButtonStyle.Success)
+    .setEmoji("👑");
+
+  const rejectBtn = new ButtonBuilder()
+    .setCustomId(`rebrand_prop_reject:${proposal.id}:${index}`)
+    .setLabel("Reject")
+    .setStyle(ButtonStyle.Danger)
+    .setEmoji("❌");
+
+  actionRow.addComponents(approveBtn, rejectBtn);
+
+  return [navRow, actionRow];
 }
 
 export function createStatusEmbed(

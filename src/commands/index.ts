@@ -7,7 +7,8 @@ import {
 } from "discord.js";
 import { config } from "../config";
 import { proposeCommand, handleProposeCommand } from "./propose";
-import { scheduleCommand, proposalsCommand, handleScheduleCommand, handleProposalsCommand } from "./schedule";
+import { scheduleCommand, handleScheduleCommand } from "./schedule";
+import { proposalsCommand, handleProposalsCommand } from "./proposals";
 import { rebrandAdminCommand, handleRebrandAdminCommand } from "./admin";
 import { helpCommand, handleHelpCommand } from "./help";
 
