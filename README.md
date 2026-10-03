@@ -28,6 +28,8 @@ Every weekend (Saturday 00:00 UTC to Sunday 23:59 UTC / Monday 00:00 UTC), the b
 - `/schedule` — View active and upcoming scheduled weekend rebrands.
 - `/proposals browse` — Interactively browse pending proposals one at a time with navigation arrows and admin action buttons.
 - `/proposals list` — View all pending proposals categorized by readiness (Ready for Approval, Missing Assets, In Progress) with direct thread links.
+- `/about` — View public bot statistics, deployed commit hash, and public repository link.
+- `/help` — View the guide and full command list.
 
 ### Admin / Owner Commands (`/rebrand` - Requires Manage Server)
 - `/rebrand config [forum_channel] [logs_channel] [min_upvotes] [upvote_emojis] [downvote_emojis]` — Configure channels, voting goal, and custom server emojis.

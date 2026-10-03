@@ -12,6 +12,7 @@ import { proposalsCommand, handleProposalsCommand } from "./proposals";
 import { uploadCommand, handleUploadCommand } from "./upload";
 import { rebrandAdminCommand, handleRebrandAdminCommand } from "./admin";
 import { helpCommand, handleHelpCommand } from "./help";
+import { aboutCommand, handleAboutCommand } from "./about";
 
 export const commands = [
   proposeCommand,
@@ -20,6 +21,7 @@ export const commands = [
   uploadCommand,
   rebrandAdminCommand,
   helpCommand,
+  aboutCommand,
 ];
 
 export async function registerCommands(
@@ -76,6 +78,9 @@ export async function handleCommandInteraction(interaction: ChatInputCommandInte
   switch (interaction.commandName) {
     case "help":
       await handleHelpCommand(interaction);
+      break;
+    case "about":
+      await handleAboutCommand(interaction);
       break;
     case "propose":
       await handleProposeCommand(interaction);

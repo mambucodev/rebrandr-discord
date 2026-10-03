@@ -69,6 +69,18 @@ export interface Suggestion {
   created_at: string;
 }
 
+export interface DatabaseStats {
+  totalProposals: number;
+  pendingProposals: number;
+  approvedProposals: number;
+  activeProposals: number;
+  completedProposals: number;
+  rejectedProposals: number;
+  cancelledProposals: number;
+  totalVotes: number;
+  configuredGuilds: number;
+}
+
 export class RebrandDatabase {
   private db: Database;
   private dbPath: string;
@@ -718,6 +730,72 @@ export class RebrandDatabase {
     } catch (err) {
       // Ignored if tables do not exist yet during initial setup
     }
+  }
+
+  public getStats(guildId?: string): DatabaseStats {
+    if (guildId) {
+      const propCounts = this.db.query(
+        `SELECT 
+           COUNT(*) as total,
+           SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+           SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
+           SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
+           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+           SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
+           SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+         FROM proposals WHERE guild_id = ?`
+      ).get(guildId) as any;
+
+      const voteCount = this.db.query(
+        `SELECT COUNT(*) as total FROM votes v 
+         JOIN proposals p ON v.proposal_id = p.id 
+         WHERE p.guild_id = ?`
+      ).get(guildId) as any;
+
+      return {
+        totalProposals: propCounts?.total || 0,
+        pendingProposals: propCounts?.pending || 0,
+        approvedProposals: propCounts?.approved || 0,
+        activeProposals: propCounts?.active || 0,
+        completedProposals: propCounts?.completed || 0,
+        rejectedProposals: propCounts?.rejected || 0,
+        cancelledProposals: propCounts?.cancelled || 0,
+        totalVotes: voteCount?.total || 0,
+        configuredGuilds: 1,
+      };
+    }
+
+    const propCounts = this.db.query(
+      `SELECT 
+         COUNT(*) as total,
+         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+         SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
+         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
+         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+         SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
+         SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+       FROM proposals`
+    ).get() as any;
+
+    const voteCount = this.db.query(
+      "SELECT COUNT(*) as total FROM votes"
+    ).get() as any;
+
+    const guildCount = this.db.query(
+      "SELECT COUNT(*) as total FROM guild_settings"
+    ).get() as any;
+
+    return {
+      totalProposals: propCounts?.total || 0,
+      pendingProposals: propCounts?.pending || 0,
+      approvedProposals: propCounts?.approved || 0,
+      activeProposals: propCounts?.active || 0,
+      completedProposals: propCounts?.completed || 0,
+      rejectedProposals: propCounts?.rejected || 0,
+      cancelledProposals: propCounts?.cancelled || 0,
+      totalVotes: voteCount?.total || 0,
+      configuredGuilds: guildCount?.total || 0,
+    };
   }
 
   public close(): void {

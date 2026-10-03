@@ -48,8 +48,11 @@ rebrandr-discord/
 │   ├── commands/             # Slash command definitions & registrations
 │   │   ├── index.ts          # Command registry & REST application command publishing
 │   │   ├── propose.ts        # /propose command logic
-│   │   ├── schedule.ts       # /schedule & /proposals commands
+│   │   ├── schedule.ts       # /schedule command
+│   │   ├── proposals.ts      # /proposals (browse & list) commands
+│   │   ├── upload.ts         # /upload command
 │   │   ├── admin.ts          # /rebrand admin command tree (config, status, approve, revert, etc.)
+│   │   ├── about.ts          # /about command (stats, commit, repo link)
 │   │   └── help.ts           # /help command
 │   ├── handlers/             # Discord event handlers
 │   │   ├── interactionHandler.ts # Slash commands, buttons (upvote/approve/cancel), modals
@@ -62,7 +65,8 @@ rebrandr-discord/
 │   │   └── healthServer.ts   # Docker/Coolify HTTP healthcheck endpoint
 │   ├── utils/                # Pure helper functions
 │   │   ├── dateUtils.ts      # UTC+0 weekend boundary calculations & date formatting
-│   │   └── imageUtils.ts     # Image buffer validation & mime inspection
+│   │   ├── imageUtils.ts     # Image buffer validation & mime inspection
+│   │   └── version.ts        # Git commit, version info, and repository link metadata
 │   ├── config.ts             # Central configuration & path resolution
 │   └── database.ts           # SQLite schema, migrations, and typed data queries
 ├── tests/                    # Bun test suites (run with `bun test`)

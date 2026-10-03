@@ -38,6 +38,7 @@ export async function handleHelpCommand(interaction: ChatInputCommandInteraction
           "• `/upload <icon> [id] [name] [topic]` — Directly upload and validate a custom server icon image for your proposal.",
           "• `/schedule` — View upcoming approved and active weekend rebrands.",
           "• `/proposals` — List pending community proposals.",
+          "• `/about` — View bot statistics, deployed commit, and public repository.",
           "• `/help` — View this guide.",
         ].join("\n"),
       },
