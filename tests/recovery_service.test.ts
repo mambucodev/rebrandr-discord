@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { ChannelType } from "discord.js";
 import { RebrandDatabase, setDatabase } from "../src/database";
 import { recoveryService } from "../src/services/recoveryService";
+import { getContainerText } from "../src/services/announcement";
 import fs from "fs";
 import path from "path";
 
@@ -235,12 +236,12 @@ describe("RecoveryService retroactive synchronization", () => {
     });
     db.updateProposalMessage(proposal.id, "msg-card-retro-1", "thread-retro-1", "thread-retro-1");
 
-    let editedEmbed: any = null;
+    let editedPayload: any = null;
     const mockCardMsg: any = {
       id: "msg-card-retro-1",
       pinned: true,
-      edit: async ({ embeds }: any) => {
-        editedEmbed = embeds[0]?.toJSON();
+      edit: async (payload: any) => {
+        editedPayload = payload;
       },
     };
 
@@ -289,15 +290,15 @@ describe("RecoveryService retroactive synchronization", () => {
     mockThread.name = "Clean Minimalist Rebrand";
     await recoveryService.syncGuild(mockGuild, db);
 
-    expect(editedEmbed).not.toBeNull();
-    // Embed fields must be completely removed
-    expect(editedEmbed.fields).toBeUndefined();
+    expect(editedPayload).not.toBeNull();
+    expect(editedPayload.flags).toBeDefined();
+    const text = getContainerText(editedPayload);
     // Title and description match clean formatting
-    expect(editedEmbed.title).toBe(`Proposal #${proposal.id} — Clean Minimalist Rebrand`);
-    expect(editedEmbed.description).toContain("Status: Needs Icon");
-    expect(editedEmbed.description).toContain("• **Creator:** <@creator-retro>");
-    expect(editedEmbed.description).toContain("• **Icon:** Not Uploaded");
-    expect(editedEmbed.description).toContain("### Voting");
+    expect(text).toContain(`Proposal #${proposal.id} — Clean Minimalist Rebrand`);
+    expect(text).toContain("Status: Needs Icon");
+    expect(text).toContain("• **Creator:** <@creator-retro>");
+    expect(text).toContain("• **Icon:** Not Uploaded");
+    expect(text).toContain("### Voting");
   });
 
   it("strictly ignores threads without the rebrand tag and deletes any wrong bot proposal cards", async () => {

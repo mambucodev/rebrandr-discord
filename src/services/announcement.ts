@@ -1,5 +1,11 @@
 import {
   EmbedBuilder,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SectionBuilder,
+  ThumbnailBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -9,10 +15,158 @@ import {
   PermissionsBitField,
   ChatInputCommandInteraction,
   ButtonInteraction,
+  MessageFlags,
 } from "discord.js";
 import type { Proposal, ProposalWithVotes, Suggestion, GuildSettings } from "../database";
 import { formatWeekendDate } from "../utils/dateUtils";
 import { config } from "../config";
+
+/**
+ * Converts a standard EmbedBuilder (or existing ContainerBuilder) and optional ActionRows
+ * into a Discord Components V2 ContainerBuilder.
+ *
+ * In Discord Components V2, placing ActionRowBuilder inside ContainerBuilder causes
+ * interaction buttons to render INSIDE the embed card instead of beneath it.
+ */
+export function embedToContainer(
+  embedOrContainer: EmbedBuilder | ContainerBuilder,
+  actionRows: ActionRowBuilder<any>[] | ActionRowBuilder<any> = []
+): ContainerBuilder {
+  if (embedOrContainer instanceof ContainerBuilder) {
+    const rows = Array.isArray(actionRows) ? actionRows : [actionRows];
+    if (rows.length > 0) {
+      embedOrContainer.addActionRowComponents(...rows);
+    }
+    return embedOrContainer;
+  }
+
+  const embed = embedOrContainer;
+  const container = new ContainerBuilder();
+  const data = embed.data;
+
+  if (data.color) {
+    container.setAccentColor(data.color);
+  }
+
+  const textParts: string[] = [];
+  if (data.author?.name) {
+    textParts.push(`**${data.author.name}**`);
+  }
+  if (data.title) {
+    textParts.push(`## ${data.title}`);
+  }
+  if (data.description) {
+    textParts.push(data.description);
+  }
+  if (data.fields && data.fields.length > 0) {
+    if (textParts.length > 0) textParts.push("");
+    for (const field of data.fields) {
+      textParts.push(`**${field.name}**\n${field.value}`);
+    }
+  }
+
+  const footerParts: string[] = [];
+  if (data.footer?.text) {
+    footerParts.push(data.footer.text);
+  }
+  if (data.timestamp) {
+    const ts = Math.floor(new Date(data.timestamp).getTime() / 1000);
+    if (!isNaN(ts)) {
+      footerParts.push(`<t:${ts}:R>`);
+    }
+  }
+  if (footerParts.length > 0) {
+    textParts.push("");
+    textParts.push(`-# ${footerParts.join(" • ")}`);
+  }
+
+  const fullText = textParts.join("\n");
+
+  if (data.thumbnail?.url) {
+    const section = new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(fullText || " "))
+      .setThumbnailAccessory(new ThumbnailBuilder({ media: { url: data.thumbnail.url } }));
+    container.addSectionComponents(section);
+  } else if (fullText.trim().length > 0) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(fullText));
+  }
+
+  if (data.image?.url) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(data.image.url)
+      )
+    );
+  }
+
+  const rows = Array.isArray(actionRows) ? actionRows : [actionRows];
+  if (rows.length > 0) {
+    container.addActionRowComponents(...rows);
+  }
+
+  return container;
+}
+
+export interface ContainerPayloadOptions {
+  ephemeral?: boolean;
+}
+
+/**
+ * Builds a message payload using Discord Components V2.
+ * Interactive action rows (buttons & select menus) are nested inside the container.
+ */
+export function toContainerPayload(
+  embedOrContainer: EmbedBuilder | ContainerBuilder,
+  actionRows: ActionRowBuilder<any>[] | ActionRowBuilder<any> = [],
+  options?: ContainerPayloadOptions
+): { components: [ContainerBuilder]; flags: any } {
+  const container = embedToContainer(embedOrContainer, actionRows);
+  let flags: number = MessageFlags.IsComponentsV2;
+  if (options?.ephemeral) {
+    flags |= MessageFlags.Ephemeral;
+  }
+  return {
+    components: [container],
+    flags: flags as any,
+  };
+}
+
+/**
+ * Builds a message update payload for interaction.update() using Discord Components V2.
+ */
+export function toContainerUpdatePayload(
+  embedOrContainer: EmbedBuilder | ContainerBuilder,
+  actionRows: ActionRowBuilder<any>[] | ActionRowBuilder<any> = []
+): { components: [ContainerBuilder]; flags: any } {
+  const container = embedToContainer(embedOrContainer, actionRows);
+  return {
+    components: [container],
+    flags: MessageFlags.IsComponentsV2 as any,
+  };
+}
+
+/**
+ * Extracts and concatenates all text content from a ContainerBuilder or message payload.
+ * Useful for inspecting container contents in tests and handlers.
+ */
+export function getContainerText(containerOrPayload: any): string {
+  const container = containerOrPayload?.components?.[0]?.toJSON
+    ? containerOrPayload.components[0].toJSON()
+    : containerOrPayload?.toJSON
+    ? containerOrPayload.toJSON()
+    : containerOrPayload?.components?.[0] || containerOrPayload;
+  if (!container) return "";
+  const texts: string[] = [];
+  for (const c of container.components || []) {
+    if (c.type === 10 && typeof c.content === "string") texts.push(c.content);
+    if (c.type === 9 && Array.isArray(c.components)) {
+      for (const sub of c.components) {
+        if (sub.type === 10 && typeof sub.content === "string") texts.push(sub.content);
+      }
+    }
+  }
+  return texts.join("\n");
+}
 
 export function createVoteProgressBar(current: number, target: number, barLength: number = 8): string {
   const clamped = Math.max(0, current);

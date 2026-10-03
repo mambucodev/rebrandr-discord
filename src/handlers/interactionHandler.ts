@@ -34,6 +34,8 @@ import {
   createProposalCarouselEmbed,
   createProposalCarouselActionRows,
   categorizeAndSortProposals,
+  toContainerPayload,
+  toContainerUpdatePayload,
 } from "../services/announcement";
 import { formatWeekendDate } from "../utils/dateUtils";
 
@@ -59,10 +61,7 @@ export async function handleInteraction(interaction: Interaction): Promise<void>
         "Unexpected Error",
         "An unexpected error occurred while processing this interaction."
       );
-      await interaction.reply({
-        embeds: [errorEmbed],
-        flags: MessageFlags.Ephemeral,
-      }).catch(() => null);
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true })).catch(() => null);
     }
   }
 }
@@ -73,7 +72,7 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
     if (!hasAdminPermission(interaction)) {
       console.log(`[SelectMenu] Permission denied for @${interaction.user.tag} on tag selection`);
       const errorEmbed = createErrorEmbed("Permission Denied", "Only administrators can configure rebrand settings.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -97,13 +96,13 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
     const forumChan = (await interaction.guild.channels.fetch(forumId).catch(() => null)) as ForumChannel | null;
     if (forumChan && forumChan.availableTags) {
       const { embed, rows } = createForumTagConfigEmbedAndRows(forumChan, updatedSettings);
-      await interaction.update({ embeds: [embed], components: rows });
+      await interaction.update(toContainerUpdatePayload(embed, rows));
     } else {
       const successEmbed = createSuccessEmbed(
         "Tag Updated",
         `Configured **${type} tag** to \`${newTagId || "None"}\` for forum <#${forumId}>.`
       );
-      await interaction.update({ embeds: [successEmbed], components: [] });
+      await interaction.update(toContainerUpdatePayload(successEmbed, []));
     }
     return;
   }
@@ -113,7 +112,7 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
     if (!hasAdminPermission(interaction)) {
       console.log(`[SelectMenu] Permission denied for @${interaction.user.tag} on tag selection`);
       const errorEmbed = createErrorEmbed("Permission Denied", "Only administrators can configure rebrand settings.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -135,10 +134,7 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
       .setColor(0x57f287)
       .setTimestamp();
 
-    await interaction.update({
-      embeds: [successEmbed],
-      components: [],
-    });
+    await interaction.update(toContainerUpdatePayload(successEmbed, []));
   }
 }
 
@@ -171,7 +167,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         )
         .setColor(0x5865f2)
         .setTimestamp();
-      await interaction.update({ embeds: [emptyEmbed], components: [] });
+      await interaction.update(toContainerUpdatePayload(emptyEmbed, []));
       return;
     }
 
@@ -193,7 +189,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       interaction.guild.id
     );
 
-    await interaction.update({ embeds: [embed], components: rows });
+    await interaction.update(toContainerUpdatePayload(embed, rows));
     return;
   }
 
@@ -204,14 +200,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         "Permission Denied",
         "Only administrators can approve rebrand proposals."
       );
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
     const proposal = database.getProposal(id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -223,11 +219,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       )
       .setColor(0xf1c40f);
 
-    await interaction.reply({
-      embeds: [confirmEmbed],
-      components: [confirmRow],
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.reply(toContainerPayload(confirmEmbed, [confirmRow], { ephemeral: true }));
     return;
   }
 
@@ -237,14 +229,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         "Permission Denied",
         "Only administrators can reject rebrand proposals."
       );
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
     const proposal = database.getProposal(id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -254,11 +246,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       .setDescription(`Are you sure you want to reject proposal **#${proposal.id} ("${proposal.name}")**?`)
       .setColor(0xed4245);
 
-    await interaction.reply({
-      embeds: [confirmEmbed],
-      components: [confirmRow],
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.reply(toContainerPayload(confirmEmbed, [confirmRow], { ephemeral: true }));
     return;
   }
 
@@ -267,7 +255,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     const proposal = database.getProposal(id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -282,7 +270,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         "Author Only",
         "Only the proposal creator or administrators can upload the server icon. If you want to suggest an icon for this rebrand, please click the **Suggest Asset** button!"
       );
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -305,7 +293,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       .setColor(0x5865f2)
       .setFooter({ text: "Max file size: 10MB • Supported formats: PNG, JPG, WEBP, GIF" });
 
-    await interaction.reply({ embeds: [promptEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply(toContainerPayload(promptEmbed, [], { ephemeral: true }));
     return;
   }
 
@@ -315,7 +303,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     if (!proposal) {
       console.log(`[Button] Proposal #${id} not found for modal open request`);
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -357,7 +345,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     const proposal = database.getProposal(id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -395,14 +383,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     if (!suggestion) {
       console.log(`[Button] Suggestion #${id} not found`);
       const errorEmbed = createErrorEmbed("Suggestion Not Found", "This suggestion no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
     const proposal = database.getProposal(suggestion.proposal_id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "The associated proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -415,7 +403,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         "Permission Denied",
         "Only the thread author or administrators can accept or decline asset suggestions."
       );
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -447,7 +435,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         if (cardMsg) {
           const cardEmbed = createProposalEmbed(updated, settings.min_upvotes);
           const cardRow = createProposalActionRow(updated, settings.min_upvotes);
-          await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
+          await cardMsg.edit(toContainerPayload(cardEmbed, [cardRow])).catch(() => null);
         }
       }
 
@@ -459,7 +447,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         "✅ Suggestion Accepted",
         `Asset suggestion by <@${suggestion.user_id}> accepted by <@${interaction.user.id}>! Proposal #${proposal.id} updated.`
       );
-      await interaction.update({ embeds: [acceptedEmbed], components: [] });
+      await interaction.update(toContainerUpdatePayload(acceptedEmbed, []));
     } else {
       console.log(`[Button] Suggestion #${suggestion.id} DECLINED by @${interaction.user.tag}`);
       database.updateSuggestionStatus(suggestion.id, "rejected");
@@ -467,7 +455,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         "❌ Suggestion Declined",
         `Asset suggestion declined by <@${interaction.user.id}>.`
       );
-      await interaction.update({ embeds: [rejectedEmbed], components: [] });
+      await interaction.update(toContainerUpdatePayload(rejectedEmbed, []));
     }
     return;
   }
@@ -476,14 +464,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     if (!hasAdminPermission(interaction)) {
       console.log(`[Button] Admin approve button clicked by unauthorized user @${interaction.user.tag}`);
       const errorEmbed = createErrorEmbed("Permission Denied", "Only administrators can approve rebrands.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
     const proposal = database.getProposal(id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -495,25 +483,21 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       )
       .setColor(0xf1c40f);
 
-    await interaction.reply({
-      embeds: [confirmEmbed],
-      components: [confirmRow],
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.reply(toContainerPayload(confirmEmbed, [confirmRow], { ephemeral: true }));
     return;
   }
 
   if (action === "rebrand_log_reject") {
     if (!hasAdminPermission(interaction)) {
       const errorEmbed = createErrorEmbed("Permission Denied", "Only administrators can reject rebrands.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
     const proposal = database.getProposal(id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -523,31 +507,27 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       .setDescription(`Are you sure you want to reject proposal **#${proposal.id} ("${proposal.name}")**?`)
       .setColor(0xed4245);
 
-    await interaction.reply({
-      embeds: [confirmEmbed],
-      components: [confirmRow],
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.reply(toContainerPayload(confirmEmbed, [confirmRow], { ephemeral: true }));
     return;
   }
 
   if (action === "rebrand_cancel_action") {
     const cancelEmbed = createInfoEmbed("Action Cancelled", "The approval/rejection action was cancelled.");
-    await interaction.update({ embeds: [cancelEmbed], components: [] });
+    await interaction.update(toContainerUpdatePayload(cancelEmbed, []));
     return;
   }
 
   if (action === "rebrand_confirm_approve") {
     if (!hasAdminPermission(interaction)) {
       const errorEmbed = createErrorEmbed("Permission Denied", "Only administrators can approve rebrands.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
     const approved = database.approveProposal(id, interaction.user.id);
     if (!approved || !interaction.guild) {
       const errorEmbed = createErrorEmbed("Approval Failed", "Failed to approve proposal.");
-      await interaction.update({ embeds: [errorEmbed], components: [] });
+      await interaction.update(toContainerUpdatePayload(errorEmbed, []));
       return;
     }
 
@@ -566,14 +546,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
           if (cardMsg) {
             const cardEmbed = createProposalEmbed(approved, settings.min_upvotes);
             const cardRow = createProposalActionRow(approved, settings.min_upvotes);
-            await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
+            await cardMsg.edit(toContainerPayload(cardEmbed, [cardRow])).catch(() => null);
           }
         }
         const threadNotice = createSuccessEmbed(
           "👑 Rebrand Approved by Admins!",
           `This rebrand proposal was approved by <@${interaction.user.id}> and is scheduled for **${scheduledDateText}**!`
         );
-        await thread.send({ embeds: [threadNotice] }).catch(() => null);
+        await thread.send(toContainerPayload(threadNotice)).catch(() => null);
       }
     }
 
@@ -587,7 +567,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
             .setDescription(`Approved by <@${interaction.user.id}>\nScheduled for **${scheduledDateText}**`)
             .setColor(0x57f287)
             .setTimestamp();
-          await logMsg.edit({ embeds: [updatedLogEmbed], components: [] }).catch(() => null);
+          await logMsg.edit(toContainerPayload(updatedLogEmbed, [])).catch(() => null);
         }
       }
     }
@@ -596,21 +576,21 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       "✅ Approved & Scheduled",
       `Proposal **#${approved.id} ("${approved.name}")** approved and scheduled for **${scheduledDateText}**.`
     );
-    await interaction.update({ embeds: [successEmbed], components: [] });
+    await interaction.update(toContainerUpdatePayload(successEmbed, []));
     return;
   }
 
   if (action === "rebrand_confirm_reject") {
     if (!hasAdminPermission(interaction)) {
       const errorEmbed = createErrorEmbed("Permission Denied", "Only administrators can reject rebrands.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
     const rejected = database.rejectProposal(id, `Rejected by <@${interaction.user.id}> in Admin Logs`);
     if (!rejected || !interaction.guild) {
       const errorEmbed = createErrorEmbed("Rejection Failed", "Failed to reject proposal.");
-      await interaction.update({ embeds: [errorEmbed], components: [] });
+      await interaction.update(toContainerUpdatePayload(errorEmbed, []));
       return;
     }
 
@@ -628,14 +608,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
           if (cardMsg) {
             const cardEmbed = createProposalEmbed(rejected, settings.min_upvotes);
             const cardRow = createProposalActionRow(rejected, settings.min_upvotes);
-            await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
+            await cardMsg.edit(toContainerPayload(cardEmbed, [cardRow])).catch(() => null);
           }
         }
         const threadNotice = createErrorEmbed(
           "❌ Rebrand Rejected",
           `This proposal was rejected by <@${interaction.user.id}>.`
         );
-        await thread.send({ embeds: [threadNotice] }).catch(() => null);
+        await thread.send(toContainerPayload(threadNotice)).catch(() => null);
       }
     }
 
@@ -649,7 +629,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
             .setDescription(`Rejected by <@${interaction.user.id}>.`)
             .setColor(0xed4245)
             .setTimestamp();
-          await logMsg.edit({ embeds: [updatedLogEmbed], components: [] }).catch(() => null);
+          await logMsg.edit(toContainerPayload(updatedLogEmbed, [])).catch(() => null);
         }
       }
     }
@@ -658,7 +638,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
       "❌ Proposal Rejected",
       `Proposal **#${rejected.id} ("${rejected.name}")** has been marked as rejected.`
     );
-    await interaction.update({ embeds: [successEmbed], components: [] });
+    await interaction.update(toContainerUpdatePayload(successEmbed, []));
     return;
   }
 }
@@ -674,7 +654,7 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
     const proposal = database.getProposal(id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -683,7 +663,7 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
 
     if (!isAuthor && !isAdmin) {
       const errorEmbed = createErrorEmbed("Permission Denied", "Only the creator or administrators can edit details.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -700,7 +680,7 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
       if (cardMsg) {
         const cardEmbed = createProposalEmbed(updated, settings.min_upvotes);
         const cardRow = createProposalActionRow(updated, settings.min_upvotes);
-        await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
+        await cardMsg.edit(toContainerPayload(cardEmbed, [cardRow])).catch(() => null);
       }
     }
 
@@ -709,7 +689,7 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
     }
 
     const successEmbed = createSuccessEmbed("Details Updated", `Updated proposal name to **"${name}"**!`);
-    await interaction.reply({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply(toContainerPayload(successEmbed, [], { ephemeral: true }));
     return;
   }
 
@@ -720,7 +700,7 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
     const proposal = database.getProposal(id);
     if (!proposal) {
       const errorEmbed = createErrorEmbed("Proposal Not Found", "This proposal no longer exists.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
       return;
     }
 
@@ -736,19 +716,18 @@ async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<v
 
     if (proposal.thread_id && interaction.channel?.isThread()) {
       const suggestEmbed = createSuggestionEmbed(suggestion, proposal);
+      suggestEmbed.setDescription(
+        `<@${proposal.user_id}> A new asset suggestion was submitted by <@${interaction.user.id}>!\n\n${suggestEmbed.data.description || ""}`
+      );
       const suggestRow = createSuggestionActionRow(suggestion.id);
-      await interaction.channel.send({
-        content: `<@${proposal.user_id}> A new asset suggestion was submitted by <@${interaction.user.id}>!`,
-        embeds: [suggestEmbed],
-        components: [suggestRow],
-      });
+      await interaction.channel.send(toContainerPayload(suggestEmbed, [suggestRow]));
     }
 
     const successEmbed = createSuccessEmbed(
       "Suggestion Submitted",
       `Your asset suggestion for proposal **#${proposal.id}** has been posted to the thread for the author to review!`
     );
-    await interaction.reply({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply(toContainerPayload(successEmbed, [], { ephemeral: true }));
     return;
   }
 }

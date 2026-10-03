@@ -11,6 +11,7 @@ import {
   createProposalCarouselActionRows,
   categorizeAndSortProposals,
   createErrorEmbed,
+  toContainerPayload,
 } from "../services/announcement";
 
 export const proposalsCommand = new SlashCommandBuilder()
@@ -33,7 +34,7 @@ export async function handleProposalsList(interaction: ChatInputCommandInteracti
       "Direct Message Not Supported",
       "This command can only be used inside a Discord server."
     );
-    await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
     return;
   }
 
@@ -41,7 +42,7 @@ export async function handleProposalsList(interaction: ChatInputCommandInteracti
   const pending = database.getProposalsByStatus(interaction.guild.id, "pending");
   const embed = createProposalsListEmbed(pending, interaction.guild, settings.min_upvotes);
 
-  await interaction.reply({ embeds: [embed] });
+  await interaction.reply(toContainerPayload(embed));
 }
 
 export async function handleProposalsBrowse(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -50,7 +51,7 @@ export async function handleProposalsBrowse(interaction: ChatInputCommandInterac
       "Direct Message Not Supported",
       "This command can only be used inside a Discord server."
     );
-    await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
     return;
   }
 
@@ -66,7 +67,7 @@ export async function handleProposalsBrowse(interaction: ChatInputCommandInterac
       )
       .setColor(0x5865f2)
       .setTimestamp();
-    await interaction.reply({ embeds: [emptyEmbed] });
+    await interaction.reply(toContainerPayload(emptyEmbed));
     return;
   }
 
@@ -88,10 +89,7 @@ export async function handleProposalsBrowse(interaction: ChatInputCommandInterac
     interaction.guild.id
   );
 
-  await interaction.reply({
-    embeds: [embed],
-    components: rows,
-  });
+  await interaction.reply(toContainerPayload(embed, rows));
 }
 
 export async function handleProposalsCommand(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -100,7 +98,7 @@ export async function handleProposalsCommand(interaction: ChatInputCommandIntera
       "Direct Message Not Supported",
       "This command can only be used inside a Discord server."
     );
-    await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
     return;
   }
 

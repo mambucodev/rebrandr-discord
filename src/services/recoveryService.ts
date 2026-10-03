@@ -7,7 +7,12 @@ import {
 } from "discord.js";
 import { database, RebrandDatabase } from "../database";
 import { syncThreadProposal } from "../handlers/threadHandler";
-import { createProposalEmbed, createProposalActionRow } from "./announcement";
+import {
+  createProposalEmbed,
+  createProposalActionRow,
+  toContainerPayload,
+  getContainerText,
+} from "./announcement";
 
 export interface RecoverySyncReport {
   threadsProcessed: number;
@@ -33,7 +38,9 @@ export class RecoveryService {
       for (const [, m] of messages) {
         const isBotProposalCard =
           m.author?.id === botId &&
-          (m.embeds?.some((e) => e.title?.includes("Proposal #") || e.title?.includes("Pending Rebrand")) || false);
+          ((m.embeds?.some((e: any) => e.title?.includes("Proposal #") || e.title?.includes("Pending Rebrand")) || false) ||
+           getContainerText(m).includes("Proposal #") ||
+           getContainerText(m).includes("Pending Rebrand"));
         const isPinNotification = m.type === 24 && m.deletable;
 
         if (isBotProposalCard && typeof m.delete === "function") {
@@ -243,7 +250,7 @@ export class RecoveryService {
           if (cardMsg && typeof cardMsg.edit === "function") {
             const embed = createProposalEmbed(proposal, settings.min_upvotes);
             const row = createProposalActionRow(proposal, settings.min_upvotes);
-            await cardMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
+            await cardMsg.edit(toContainerPayload(embed, [row])).catch(() => null);
             console.log(`[Recovery] Retroactively updated card message for proposal #${proposal.id} in thread ${thread.id}`);
           }
         }

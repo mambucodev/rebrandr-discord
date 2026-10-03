@@ -6,6 +6,7 @@ import {
   createProposalsListEmbed,
   createProposalCarouselEmbed,
   createProposalCarouselActionRows,
+  getContainerText,
 } from "../src/services/announcement";
 import {
   proposalsCommand,
@@ -251,8 +252,8 @@ describe("Proposals Redesign (/proposals list & /proposals browse)", () => {
 
       await handleProposalsCommand(mockInteraction);
       expect(repliedPayload).toBeDefined();
-      expect(repliedPayload.embeds).toBeDefined();
-      const desc = repliedPayload.embeds[0].toJSON().description;
+      expect(repliedPayload.components).toBeDefined();
+      const desc = getContainerText(repliedPayload);
       expect(desc).toContain("Vaporwave Nights");
     });
 
@@ -277,9 +278,8 @@ describe("Proposals Redesign (/proposals list & /proposals browse)", () => {
 
       await handleProposalsCommand(mockInteraction);
       expect(repliedPayload).toBeDefined();
-      expect(repliedPayload.embeds).toBeDefined();
       expect(repliedPayload.components).toBeDefined();
-      const title = repliedPayload.embeds[0].toJSON().title;
+      const title = getContainerText(repliedPayload);
       expect(title).toContain("Synthwave Sunset");
     });
   });
@@ -317,8 +317,8 @@ describe("Proposals Redesign (/proposals list & /proposals browse)", () => {
 
       await handleInteraction(mockButtonInteraction);
       expect(updatedPayload).toBeDefined();
-      expect(updatedPayload.embeds).toBeDefined();
-      const footer = updatedPayload.embeds[0].toJSON().footer?.text;
+      expect(updatedPayload.components).toBeDefined();
+      const footer = getContainerText(updatedPayload);
       expect(footer).toContain("Proposal 2 of 2");
     });
 
@@ -347,7 +347,7 @@ describe("Proposals Redesign (/proposals list & /proposals browse)", () => {
 
       await handleInteraction(nonAdminInteraction);
       expect(repliedPayload).toBeDefined();
-      expect(repliedPayload.embeds[0].toJSON().title).toBe("Permission Denied");
+      expect(getContainerText(repliedPayload)).toContain("Permission Denied");
     });
 
     it("allows administrators to initiate approval confirmation from carousel", async () => {
@@ -375,8 +375,11 @@ describe("Proposals Redesign (/proposals list & /proposals browse)", () => {
 
       await handleInteraction(adminInteraction);
       expect(repliedPayload).toBeDefined();
-      expect(repliedPayload.embeds[0].toJSON().title).toContain("Confirm Approval");
-      expect(repliedPayload.components[0].components[0].data.custom_id).toBe(`rebrand_confirm_approve:${p.id}`);
+      expect(getContainerText(repliedPayload)).toContain("Confirm Approval");
+      const btn = (repliedPayload.components[0].components as any[])
+        .flatMap((c: any) => c.components || [])
+        .find((b: any) => b.data?.custom_id?.startsWith("rebrand_confirm_approve"));
+      expect(btn?.data?.custom_id).toBe(`rebrand_confirm_approve:${p.id}`);
     });
   });
 });

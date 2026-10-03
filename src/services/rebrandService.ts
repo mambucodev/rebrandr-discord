@@ -10,6 +10,7 @@ import {
   createRebrandConcludedEmbed,
   createAdminLogApprovalEmbed,
   createAdminLogActionRow,
+  toContainerPayload,
 } from "./announcement";
 
 export class RebrandService {
@@ -219,7 +220,7 @@ export class RebrandService {
     if (channel) {
       try {
         console.log(`[RebrandService] Sending admin log to channel #${channel.name} (${channel.id})`);
-        return await channel.send({ embeds: [embed], components: components || [] });
+        return await channel.send(toContainerPayload(embed, components || []));
       } catch (err) {
         console.error(`[RebrandService] Failed to send admin log in channel ${channel.id}:`, err);
       }
@@ -341,13 +342,13 @@ export class RebrandService {
       if (proposal.log_message_id) {
         const existingMsg = await logsChan.messages.fetch(proposal.log_message_id).catch(() => null);
         if (existingMsg) {
-          await existingMsg.edit({ embeds: [logEmbed], components: [actionRow] });
+          await existingMsg.edit(toContainerPayload(logEmbed, [actionRow]));
           console.log(`[RebrandService] Updated existing admin log approval card for proposal #${proposal.id}`);
           return;
         }
       }
 
-      const newMsg = await logsChan.send({ embeds: [logEmbed], components: [actionRow] });
+      const newMsg = await logsChan.send(toContainerPayload(logEmbed, [actionRow]));
       database.updateProposalLogMessage(proposal.id, newMsg.id);
       console.log(`[RebrandService] Sent new admin log approval card ${newMsg.id} for proposal #${proposal.id}`);
     } catch (err) {

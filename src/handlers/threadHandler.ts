@@ -14,6 +14,7 @@ import {
   createProposalEmbed,
   createProposalActionRow,
   createSuccessEmbed,
+  toContainerPayload,
 } from "../services/announcement";
 
 const DEFAULT_UPVOTE_NAMES = new Set(["⬆️", "⬆", "👍", "🔺", "arrow_up", "+1"]);
@@ -298,10 +299,7 @@ export async function syncThreadProposal(
 
   if (!cardMsg && typeof thread.send === "function") {
     try {
-      cardMsg = await thread.send({
-        embeds: [embed],
-        components: [row],
-      });
+      cardMsg = await thread.send(toContainerPayload(embed, [row]));
       console.log(`[ThreadSync] Sent proposal card message ${cardMsg.id} in thread ${thread.id}`);
 
       if (typeof cardMsg?.pin === "function") {
@@ -344,7 +342,7 @@ export async function syncThreadProposal(
         await thread.setArchived(false).catch(() => null);
       }
       const components = proposal.status === "cancelled" ? [] : [row];
-      await cardMsg.edit({ embeds: [embed], components }).catch((err) => {
+      await cardMsg.edit(toContainerPayload(embed, components)).catch((err) => {
         console.error(`[ThreadSync] Failed to edit card in thread ${thread.id}:`, err);
       });
       if (wasArchived && typeof thread.setArchived === "function") {
@@ -376,7 +374,7 @@ export async function syncThreadProposal(
     if (cardMsg && typeof cardMsg.edit === "function") {
       const updatedEmbed = createProposalEmbed(proposal, settings.min_upvotes);
       const updatedRow = createProposalActionRow(proposal, settings.min_upvotes);
-      await cardMsg.edit({ embeds: [updatedEmbed], components: [updatedRow] }).catch(() => null);
+      await cardMsg.edit(toContainerPayload(updatedEmbed, [updatedRow])).catch(() => null);
     }
   }
 
@@ -474,7 +472,7 @@ export async function handleThreadUpdate(
       if (cardMsg && typeof cardMsg.edit === "function") {
         const cancelledProposal = db.getProposal(proposal.id)!;
         const cardEmbed = createProposalEmbed(cancelledProposal, settings.min_upvotes);
-        await cardMsg.edit({ embeds: [cardEmbed], components: [] }).catch(() => null);
+        await cardMsg.edit(toContainerPayload(cardEmbed, [])).catch(() => null);
       }
     }
   }
@@ -515,10 +513,12 @@ export async function handleThreadMessage(message: Message, db: RebrandDatabase 
     if (proposal.message_id) {
       const card = await thread.messages.fetch(proposal.message_id).catch(() => null);
       if (card) {
-        await card.edit({
-          embeds: [createProposalEmbed(updated, settings.min_upvotes)],
-          components: [createProposalActionRow(updated, settings.min_upvotes)],
-        }).catch(() => null);
+        await card.edit(
+          toContainerPayload(
+            createProposalEmbed(updated, settings.min_upvotes),
+            [createProposalActionRow(updated, settings.min_upvotes)]
+          )
+        ).catch(() => null);
       }
     }
 
@@ -529,7 +529,7 @@ export async function handleThreadMessage(message: Message, db: RebrandDatabase 
       `Server icon updated from your upload for Proposal **#${updated.id} ("${updated.name}")**!`
     );
     success.setThumbnail(imgAttachment.url);
-    await message.reply({ embeds: [success] }).catch(() => null);
+    await message.reply(toContainerPayload(success)).catch(() => null);
   } catch (err: any) {
     console.error("[ThreadMessage] Error validating author uploaded image:", err);
   }
@@ -621,7 +621,7 @@ export async function handleReactionEvent(
       if (cardMsg) {
         const embed = createProposalEmbed(updatedProposal, settings.min_upvotes);
         const row = createProposalActionRow(updatedProposal, settings.min_upvotes);
-        await cardMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
+        await cardMsg.edit(toContainerPayload(embed, [row])).catch(() => null);
       }
     }
 

@@ -4,6 +4,7 @@ import {
   EmbedBuilder,
 } from "discord.js";
 import { database } from "../database";
+import { toContainerPayload } from "../services/announcement";
 
 export const helpCommand = new SlashCommandBuilder()
   .setName("help")
@@ -60,5 +61,5 @@ export async function handleHelpCommand(interaction: ChatInputCommandInteraction
     })
     .setTimestamp();
 
-  await interaction.reply({ embeds: [embed] });
+  await interaction.reply(toContainerPayload(embed));
 }

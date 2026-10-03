@@ -13,6 +13,7 @@ import {
   createProposalActionRow,
   createSuccessEmbed,
   createErrorEmbed,
+  toContainerPayload,
 } from "../services/announcement";
 
 export const proposeCommand = new SlashCommandBuilder()
@@ -42,7 +43,7 @@ export const proposeCommand = new SlashCommandBuilder()
 export async function handleProposeCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   if (!interaction.guild) {
     const errorEmbed = createErrorEmbed("Direct Message Not Supported", "This command can only be used inside a Discord server.");
-    await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
     return;
   }
 
@@ -59,7 +60,7 @@ export async function handleProposeCommand(interaction: ChatInputCommandInteract
       "Invalid File Type",
       "Please upload a valid image file (**PNG, JPG, WEBP, GIF**) for the server icon."
     );
-    await interaction.editReply({ embeds: [errorEmbed] });
+    await interaction.editReply(toContainerPayload(errorEmbed));
     return;
   }
 
@@ -102,10 +103,7 @@ export async function handleProposeCommand(interaction: ChatInputCommandInteract
 
     if (isCurrentChannelThread) {
       const thread = interaction.channel as ThreadChannel;
-      const msg = await thread.send({
-        embeds: [embed],
-        components: [actionRow],
-      });
+      const msg = await thread.send(toContainerPayload(embed, [actionRow]));
       messageId = msg.id;
       channelId = thread.id;
       createdThreadId = thread.id;
@@ -130,10 +128,7 @@ export async function handleProposeCommand(interaction: ChatInputCommandInteract
         const forumPost = await forum.threads.create({
           name: `[Rebrand] ${name}`,
           appliedTags,
-          message: {
-            embeds: [embed],
-            components: [actionRow],
-          },
+          message: toContainerPayload(embed, [actionRow]),
         });
 
         createdThreadId = forumPost.id;
@@ -154,7 +149,7 @@ export async function handleProposeCommand(interaction: ChatInputCommandInteract
           "Forum Channel Not Configured",
           "Please configure the rebrand forum channel first with `/rebrand config`."
         );
-        await interaction.editReply({ embeds: [errorEmbed] });
+        await interaction.editReply(toContainerPayload(errorEmbed));
         return;
       }
     }
@@ -169,13 +164,13 @@ export async function handleProposeCommand(interaction: ChatInputCommandInteract
     if (iconAttachment.url) {
       successEmbed.setThumbnail(iconAttachment.url);
     }
-    await interaction.editReply({ embeds: [successEmbed] });
+    await interaction.editReply(toContainerPayload(successEmbed));
   } catch (err) {
     console.error("[Propose] Error creating proposal thread/post:", err);
     const errorEmbed = createErrorEmbed(
       "Submission Incomplete",
       `Proposal was created (ID: #${proposal.id}), but failed to post in the forum. Please verify bot permissions.`
     );
-    await interaction.editReply({ embeds: [errorEmbed] });
+    await interaction.editReply(toContainerPayload(errorEmbed));
   }
 }

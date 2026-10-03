@@ -25,6 +25,7 @@ import {
   createForumTagConfigEmbedAndRows,
   createScheduleEmbed,
   hasAdminPermission,
+  toContainerPayload,
 } from "../services/announcement";
 import { formatWeekendDate } from "../utils/dateUtils";
 
@@ -187,7 +188,7 @@ export async function handleRebrandAdminCommand(
       "Permission Denied",
       `You need **Administrator** or **Manage Server** permissions to run \`/rebrand ${sub}\`.`
     );
-    await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+    await interaction.reply(toContainerPayload(errorEmbed, [], { ephemeral: true }));
     return;
   }
 
@@ -214,11 +215,7 @@ export async function handleRebrandAdminCommand(
 
         if (availableTags.length > 0) {
           const { embed, rows } = createForumTagConfigEmbedAndRows(forumChan, updatedSettings);
-          await interaction.reply({
-            embeds: [embed],
-            components: rows,
-            flags: MessageFlags.Ephemeral,
-          });
+          await interaction.reply(toContainerPayload(embed, rows, { ephemeral: true }));
           return;
         } else {
           updates.rebrand_tag_id = null;
@@ -275,7 +272,7 @@ export async function handleRebrandAdminCommand(
         )
         .setTimestamp();
 
-      await interaction.reply({ embeds: [configEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(configEmbed, [], { ephemeral: true }));
       break;
     }
 
@@ -292,7 +289,7 @@ export async function handleRebrandAdminCommand(
           "Forum Channel Required",
           "No forum channel is configured yet. Please specify `forum_channel` or configure it using `/rebrand config`."
         );
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
@@ -301,7 +298,7 @@ export async function handleRebrandAdminCommand(
           "No Tags Found",
           `Forum channel <#${forumChan.id}> has no tags created yet. Please create tags in Discord forum channel settings first.`
         );
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
@@ -311,11 +308,7 @@ export async function handleRebrandAdminCommand(
 
       const currentSettings = database.getGuildSettings(guildId);
       const { embed, rows } = createForumTagConfigEmbedAndRows(forumChan, currentSettings);
-      await interaction.reply({
-        embeds: [embed],
-        components: rows,
-        flags: MessageFlags.Ephemeral,
-      });
+      await interaction.reply(toContainerPayload(embed, rows, { ephemeral: true }));
       break;
     }
 
@@ -333,7 +326,7 @@ export async function handleRebrandAdminCommand(
           "Invalid Image File",
           "Please upload a valid image file (**PNG, JPG, WEBP, or GIF**) for the server icon."
         );
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
@@ -347,14 +340,14 @@ export async function handleRebrandAdminCommand(
           "Proposal ID Required",
           "Specify the `id` option (e.g. `/rebrand upload icon:<file> id:123`) or run this command directly inside the proposal's forum thread."
         );
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
       const proposal = database.getProposal(proposalId);
       if (!proposal || proposal.guild_id !== guildId) {
         const errEmbed = createErrorEmbed("Not Found", `Proposal **#${proposalId}** does not exist in this server.`);
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
@@ -369,7 +362,7 @@ export async function handleRebrandAdminCommand(
           "Permission Denied",
           "Only the proposal author or server administrators can upload icons for this proposal. If you'd like to suggest an icon, please use the **Suggest Asset** button in the thread!"
         );
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
@@ -395,7 +388,7 @@ export async function handleRebrandAdminCommand(
             if (cardMsg) {
               const cardEmbed = createProposalEmbed(updated, settings.min_upvotes);
               const cardRow = createProposalActionRow(updated, settings.min_upvotes);
-              await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
+              await cardMsg.edit(toContainerPayload(cardEmbed, [cardRow])).catch(() => null);
             }
           }
         }
@@ -408,11 +401,11 @@ export async function handleRebrandAdminCommand(
         );
         successEmbed.setThumbnail(icon.url);
 
-        await interaction.editReply({ embeds: [successEmbed] });
+        await interaction.editReply(toContainerPayload(successEmbed));
       } catch (err: any) {
         console.error("[Admin] Icon upload error:", err);
         const errEmbed = createErrorEmbed("Upload Failed", err.message || "Failed to download and validate the image file.");
-        await interaction.editReply({ embeds: [errEmbed] });
+        await interaction.editReply(toContainerPayload(errEmbed));
       }
       break;
     }
@@ -423,7 +416,7 @@ export async function handleRebrandAdminCommand(
       const nextProposal = database.getNextApprovedProposalInQueue(guildId);
 
       const statusEmbed = createStatusEmbed(settings, active, nextProposal, interaction.guild);
-      await interaction.reply({ embeds: [statusEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(statusEmbed, [], { ephemeral: true }));
       break;
     }
 
@@ -474,7 +467,7 @@ export async function handleRebrandAdminCommand(
         successEmbed.setThumbnail(updatedSettings.default_icon_url);
       }
 
-      await interaction.reply({ embeds: [successEmbed], flags: MessageFlags.Ephemeral });
+      await interaction.reply(toContainerPayload(successEmbed, [], { ephemeral: true }));
       break;
     }
 
@@ -491,21 +484,21 @@ export async function handleRebrandAdminCommand(
           "Proposal ID Required",
           "Specify the `id` option or run this command inside the proposal's forum thread."
         );
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
       const proposal = database.getProposal(proposalId);
       if (!proposal || proposal.guild_id !== guildId) {
         const errEmbed = createErrorEmbed("Not Found", `Proposal **#${proposalId}** does not exist in this server.`);
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
       const approved = database.approveProposal(proposalId, interaction.user.id);
       if (!approved) {
         const errEmbed = createErrorEmbed("Error", `Failed to approve proposal **#${proposalId}**.`);
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
@@ -530,18 +523,18 @@ export async function handleRebrandAdminCommand(
             if (cardMsg) {
               const cardEmbed = createProposalEmbed(approved, settings.min_upvotes);
               const cardRow = createProposalActionRow(approved, settings.min_upvotes);
-              await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
+              await cardMsg.edit(toContainerPayload(cardEmbed, [cardRow])).catch(() => null);
             }
           }
           const threadNotice = createSuccessEmbed(
             "👑 Rebrand Approved by Admins!",
             `This proposal was approved by <@${interaction.user.id}> and is scheduled for **${scheduledDateText}**!`
           );
-          await thread.send({ embeds: [threadNotice] }).catch(() => null);
+          await thread.send(toContainerPayload(threadNotice)).catch(() => null);
         }
       }
 
-      await interaction.reply({ embeds: [successEmbed] });
+      await interaction.reply(toContainerPayload(successEmbed));
       break;
     }
 
@@ -559,14 +552,14 @@ export async function handleRebrandAdminCommand(
           "Proposal ID Required",
           "Specify the `id` option or run this command inside the proposal's forum thread."
         );
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
       const proposal = database.getProposal(proposalId);
       if (!proposal || proposal.guild_id !== guildId) {
         const errEmbed = createErrorEmbed("Not Found", `Proposal **#${proposalId}** does not exist in this server.`);
-        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        await interaction.reply(toContainerPayload(errEmbed, [], { ephemeral: true }));
         return;
       }
 
@@ -590,25 +583,25 @@ export async function handleRebrandAdminCommand(
             if (cardMsg) {
               const cardEmbed = createProposalEmbed(rejected, settings.min_upvotes);
               const cardRow = createProposalActionRow(rejected, settings.min_upvotes);
-              await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
+              await cardMsg.edit(toContainerPayload(cardEmbed, [cardRow])).catch(() => null);
             }
           }
           const threadNotice = createErrorEmbed(
             "❌ Rebrand Rejected",
             `This proposal was rejected by <@${interaction.user.id}>.\nReason: *${reason}*`
           );
-          await thread.send({ embeds: [threadNotice] }).catch(() => null);
+          await thread.send(toContainerPayload(threadNotice)).catch(() => null);
         }
       }
 
-      await interaction.reply({ embeds: [successEmbed] });
+      await interaction.reply(toContainerPayload(successEmbed));
       break;
     }
 
     case "schedule": {
       const upcoming = database.getUpcomingSchedule(guildId);
       const scheduleEmbed = createScheduleEmbed(upcoming, interaction.guild);
-      await interaction.reply({ embeds: [scheduleEmbed] });
+      await interaction.reply(toContainerPayload(scheduleEmbed));
       break;
     }
 
@@ -620,7 +613,7 @@ export async function handleRebrandAdminCommand(
         const nextProposal = database.getNextApprovedProposalInQueue(guildId);
         if (!nextProposal) {
           const errEmbed = createErrorEmbed("Trigger Failed", "No approved proposal found in queue to apply.");
-          await interaction.editReply({ embeds: [errEmbed] });
+          await interaction.editReply(toContainerPayload(errEmbed));
           break;
         }
 
@@ -630,19 +623,19 @@ export async function handleRebrandAdminCommand(
             "Rebrand Applied",
             `Applied proposal #${nextProposal.id} ("${nextProposal.name}") successfully.`
           );
-          await interaction.editReply({ embeds: [successEmbed] });
+          await interaction.editReply(toContainerPayload(successEmbed));
         } else {
           const errEmbed = createErrorEmbed("Trigger Failed", "Failed to apply rebrand to Discord server.");
-          await interaction.editReply({ embeds: [errEmbed] });
+          await interaction.editReply(toContainerPayload(errEmbed));
         }
       } else {
         const success = await rebrandService.revertRebrand(interaction.guild, true);
         if (success) {
           const successEmbed = createSuccessEmbed("Reverted to Baseline", "Server restored to baseline defaults.");
-          await interaction.editReply({ embeds: [successEmbed] });
+          await interaction.editReply(toContainerPayload(successEmbed));
         } else {
           const errEmbed = createErrorEmbed("Trigger Failed", "Failed to revert server to default baseline.");
-          await interaction.editReply({ embeds: [errEmbed] });
+          await interaction.editReply(toContainerPayload(errEmbed));
         }
       }
       break;

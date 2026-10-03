@@ -6,6 +6,7 @@ import { database } from "../src/database";
 import { rebrandAdminCommand, handleRebrandAdminCommand } from "../src/commands/admin";
 import { handleInteraction } from "../src/handlers/interactionHandler";
 import { rebrandService } from "../src/services/rebrandService";
+import { getContainerText } from "../src/services/announcement";
 
 describe("Rebrand Upload Command & Upload Button Redesign", () => {
   beforeEach(() => {
@@ -40,8 +41,9 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
     await handleRebrandAdminCommand(interactionMock);
 
     expect(replyPayload).not.toBeNull();
-    expect(replyPayload.embeds[0].data.title).toBe("Permission Denied");
-    expect(replyPayload.embeds[0].data.description).toContain("Administrator");
+    const text = getContainerText(replyPayload);
+    expect(text).toContain("Permission Denied");
+    expect(text).toContain("Administrator");
   });
 
   it("allows configured ADMIN_USER_ID to run admin-only subcommands even on servers they do not own or manage", async () => {
@@ -71,8 +73,9 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
 
       expect(replyPayload).not.toBeNull();
       // Should not be "Permission Denied"
-      expect(replyPayload.embeds[0].data.title).not.toBe("Permission Denied");
-      expect(replyPayload.embeds[0].data.title).toContain("Weekend Rebrand");
+      const text = getContainerText(replyPayload);
+      expect(text).not.toContain("Permission Denied");
+      expect(text).toContain("Weekend Rebrand");
     } finally {
       process.env.ADMIN_USER_ID = originalEnv;
     }
@@ -110,7 +113,7 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
     await handleRebrandAdminCommand(interactionMock);
 
     expect(replyPayload).not.toBeNull();
-    expect(replyPayload.embeds[0].data.title).toBe("Invalid Image File");
+    expect(getContainerText(replyPayload)).toContain("Invalid Image File");
   });
 
   it("requires proposal ID if /rebrand upload is run outside a thread without id", async () => {
@@ -144,7 +147,7 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
     await handleRebrandAdminCommand(interactionMock);
 
     expect(replyPayload).not.toBeNull();
-    expect(replyPayload.embeds[0].data.title).toBe("Proposal ID Required");
+    expect(getContainerText(replyPayload)).toContain("Proposal ID Required");
   });
 
   it("prevents non-author non-admins from uploading to someone else's proposal", async () => {
@@ -184,8 +187,9 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
     await handleRebrandAdminCommand(interactionMock);
 
     expect(replyPayload).not.toBeNull();
-    expect(replyPayload.embeds[0].data.title).toBe("Permission Denied");
-    expect(replyPayload.embeds[0].data.description).toContain("Only the proposal author or server administrators");
+    const text = getContainerText(replyPayload);
+    expect(text).toContain("Permission Denied");
+    expect(text).toContain("Only the proposal author or server administrators");
   });
 
   it("allows proposal authors to upload server icon with /rebrand upload", async () => {
@@ -244,7 +248,7 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
 
       expect(deferred).toBe(true);
       expect(editPayload).not.toBeNull();
-      expect(editPayload.embeds[0].data.title).toContain("Server Icon Uploaded");
+      expect(getContainerText(editPayload)).toContain("Server Icon Uploaded");
 
       const updated = database.getProposal(proposal.id);
       expect(updated?.icon_url).toBe("https://example.com/flower.png");
@@ -290,8 +294,9 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
     await handleInteraction(buttonInteraction);
 
     expect(replyPayload).not.toBeNull();
-    expect(replyPayload.embeds[0].data.title).toContain("Upload Server Icon");
-    expect(replyPayload.embeds[0].data.description).toContain("/rebrand upload");
+    const text = getContainerText(replyPayload);
+    expect(text).toContain("Upload Server Icon");
+    expect(text).toContain("/rebrand upload");
     expect(replyPayload.flags).toBeDefined();
   });
 });
