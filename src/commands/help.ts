@@ -26,7 +26,7 @@ export async function handleHelpCommand(interaction: ChatInputCommandInteraction
         value: [
           "1. **Create a Forum Post**: Create a new post in the rebrand forum channel and apply the rebrand tag.",
           "2. **Auto-Pinned Proposal Card**: The bot automatically pins an expressive proposal card in your thread.",
-          "3. **Upload Icon & Edit Details**: Click **📸 Upload Icon** (or attach an image file directly in the thread / starter post) to set your server icon! Click **📝 Edit Details** to change the proposed name and theme description.",
+          "3. **Upload Icon & Edit Details**: Use `/rebrand upload` (or click **📸 Upload Icon** for guided instructions) to upload your server icon! Click **📝 Edit Details** to change the proposed name and theme description.",
           `4. **Community Voting**: Members vote by reacting with **⬆️ (Upvote)** or **⬇️ (Downvote)** directly on the thread post itself (requires ${minVotes} net upvotes). Custom server emojis are also supported if configured. Reactions on the bot's card are ignored.`,
         ].join("\n"),
       },
@@ -34,6 +34,7 @@ export async function handleHelpCommand(interaction: ChatInputCommandInteraction
         name: "👥 Member Commands",
         value: [
           "• `/propose <name> <icon> [topic]` — Directly submit a proposal with an uploaded icon file and create a tagged forum post.",
+          "• `/rebrand upload <icon> [id] [name] [topic]` — Directly upload and validate a custom server icon image for your proposal.",
           "• `/schedule` — View upcoming approved and active weekend rebrands.",
           "• `/proposals` — List pending community proposals.",
           "• `/help` — View this guide.",
@@ -43,7 +44,7 @@ export async function handleHelpCommand(interaction: ChatInputCommandInteraction
         name: "🛡️ Admin Commands (Manage Server)",
         value: [
           "• `/rebrand config [forum_channel] [logs_channel] [min_upvotes] [upvote_emojis] [downvote_emojis]` — Configure channels, voting goal, and custom server emojis.",
-          "• `/rebrand upload <icon> [id] [name] [topic]` — Directly upload and validate a custom server icon image.",
+          "• `/rebrand upload <icon> [id] [name] [topic]` — Upload or override a custom server icon image for any proposal.",
           "• `/rebrand approve [id]` — Approve and schedule a proposal.",
           "• `/rebrand reject [id] [reason]` — Reject a proposal.",
           "• `/rebrand status` — View configuration and queue status.",

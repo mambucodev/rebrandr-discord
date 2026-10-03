@@ -18,8 +18,10 @@ describe("Announcement Embeds & Action Rows", () => {
   const dummyProposal: ProposalWithVotes = {
     id: 1,
     guild_id: "guild-1",
+    channel_id: null,
     thread_id: "thread-1",
     message_id: "msg-1",
+    log_message_id: null,
     user_id: "user-1",
     name: "Cyberpunk Server",
     icon_url: "https://example.com/icon.png",
@@ -29,11 +31,18 @@ describe("Announcement Embeds & Action Rows", () => {
     is_ready: 1,
     created_at: new Date().toISOString(),
     scheduled_date: null,
+    approved_at: null,
     approved_by: null,
+    rejected_at: null,
+    rejected_reason: null,
     upvotes_count: 3,
     downvotes_count: 1,
     net_votes: 2,
     vote_count: 2,
+    upvotes: 3,
+    downvotes: 1,
+    netVotes: 2,
+    voteCount: 2,
   };
 
   const dummySuggestion: Suggestion = {

@@ -75,7 +75,10 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
     }
 
     const [, type, forumId] = interaction.customId.split(":");
-    const selectedVal = interaction.values[0]!;
+    if (!type || !forumId || !interaction.guild || !interaction.guildId) return;
+
+    const selectedVal = interaction.values[0];
+    if (!selectedVal) return;
     const newTagId = selectedVal === "clear" ? null : selectedVal;
 
     const updates: Record<string, any> = { forum_channel_id: forumId };
@@ -83,12 +86,12 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
     if (type === "approved") updates.approved_tag_id = newTagId;
     if (type === "declined") updates.declined_tag_id = newTagId;
 
-    const updatedSettings = database.updateGuildSettings(interaction.guildId!, updates);
+    const updatedSettings = database.updateGuildSettings(interaction.guildId, updates);
     console.log(
       `[SelectMenu] Updated ${type} tag to ${newTagId || "None"} for forum ${forumId} in guild ${interaction.guildId}`
     );
 
-    const forumChan = (await interaction.guild?.channels.fetch(forumId).catch(() => null)) as ForumChannel | null;
+    const forumChan = (await interaction.guild.channels.fetch(forumId).catch(() => null)) as ForumChannel | null;
     if (forumChan && forumChan.availableTags) {
       const { embed, rows } = createForumTagConfigEmbedAndRows(forumChan, updatedSettings);
       await interaction.update({ embeds: [embed], components: rows });
@@ -111,10 +114,11 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
       return;
     }
 
-    const forumId = interaction.customId.split(":")[1]!;
-    const selectedTagId = interaction.values[0]!;
+    const forumId = interaction.customId.split(":")[1];
+    const selectedTagId = interaction.values[0];
+    if (!forumId || !selectedTagId || !interaction.guildId) return;
 
-    database.updateGuildSettings(interaction.guildId!, {
+    database.updateGuildSettings(interaction.guildId, {
       forum_channel_id: forumId,
       rebrand_tag_id: selectedTagId,
     });
@@ -139,7 +143,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
   const [action, idStr] = interaction.customId.split(":");
   const id = parseInt(idStr ?? "", 10);
 
-  // Upload Icon button — prompts file upload without typing a URL
+  // Upload Icon button — instructs users to use /rebrand upload with attachment
   if (action === "rebrand_upload_icon") {
     const proposal = database.getProposal(id);
     if (!proposal) {
@@ -149,83 +153,40 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     }
 
     const isThreadAuthor = proposal.user_id === interaction.user.id;
+    const isThreadOwner =
+      interaction.channel?.isThread() &&
+      (interaction.channel as ThreadChannel).ownerId === interaction.user.id;
     const isAdmin = hasAdminPermission(interaction);
 
-    if (!isThreadAuthor && !isAdmin) {
+    if (!isThreadAuthor && !isThreadOwner && !isAdmin) {
       const errorEmbed = createErrorEmbed(
         "Author Only",
-        "Only the proposal creator or administrators can upload the server icon."
+        "Only the proposal creator or administrators can upload the server icon. If you want to suggest an icon for this rebrand, please click the **Suggest Asset** button!"
       );
       await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
       return;
     }
 
-    if (!interaction.channel || !interaction.channel.isThread()) {
-      const errorEmbed = createErrorEmbed("Thread Only", "This button can only be used inside the proposal thread.");
-      await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
-      return;
-    }
+    const isInsideThread = interaction.channel?.isThread() && interaction.channel.id === proposal.thread_id;
+    const commandText = isInsideThread
+      ? "`/rebrand upload icon:<file>`"
+      : `\`/rebrand upload icon:<file> id:${proposal.id}\``;
 
     const promptEmbed = new EmbedBuilder()
       .setTitle("📸 Upload Server Icon")
       .setDescription(
-        `Please drop or upload your icon image file (**PNG, JPG, WEBP, or GIF**) into this thread within the next 2 minutes!\n\n*The bot will download, validate, and preview it on your proposal card automatically.*`
+        `To set or change the server icon for Proposal **#${proposal.id} ("${proposal.name}")**, please use the slash command:\n\n` +
+        `>>> **${commandText}**\n\n` +
+        `**Quick Steps:**\n` +
+        `1️⃣ Type \`/rebrand upload\` in chat\n` +
+        `2️⃣ Attach your image file in the **\`icon\`** option (**PNG, JPG, WEBP, or GIF** up to 10MB)\n` +
+        `3️⃣ Press **Enter** to submit!\n\n` +
+        `*(The bot will automatically download, validate, cache, and update your proposal card!)*`
       )
       .setColor(0x5865f2)
-      .setFooter({ text: "Max file size: 10MB • Direct file attachments only" });
+      .setFooter({ text: "Max file size: 10MB • Supported formats: PNG, JPG, WEBP, GIF" });
 
     await interaction.reply({ embeds: [promptEmbed], flags: MessageFlags.Ephemeral });
-
-    const thread = interaction.channel as ThreadChannel;
-    const filter = (m: Message) => m.author.id === interaction.user.id && m.attachments.size > 0;
-
-    try {
-      const collected = await thread.awaitMessages({ filter, max: 1, time: 120_000, errors: ["time"] });
-      const userMsg = collected.first();
-      if (userMsg && userMsg.attachments.size > 0) {
-        const attachment = userMsg.attachments.first()!;
-        console.log(`[Upload] User @${interaction.user.tag} uploaded attachment "${attachment.name}" for proposal #${proposal.id}`);
-
-        try {
-          const cached = await rebrandService.downloadAndCacheImage(attachment.url, `proposal_${proposal.guild_id}`);
-          const updated = database.updateProposalDetails(proposal.id, {
-            icon_url: attachment.url,
-            icon_path: cached.filePath,
-            is_ready: 1,
-          })!;
-
-          const settings = database.getGuildSettings(interaction.guildId!);
-          if (proposal.message_id) {
-            const cardMsg = await thread.messages.fetch(proposal.message_id).catch(() => null);
-            if (cardMsg) {
-              const cardEmbed = createProposalEmbed(updated, settings.min_upvotes);
-              const cardRow = createProposalActionRow(updated, settings.min_upvotes);
-              await cardMsg.edit({ embeds: [cardEmbed], components: [cardRow] }).catch(() => null);
-            }
-          }
-
-          if (interaction.guild) {
-            await rebrandService.checkAndNotifyAdminLogs(interaction.guild, proposal.id);
-          }
-
-          const confirmedEmbed = createSuccessEmbed(
-            "✅ Server Icon Uploaded & Verified",
-            `Server icon for Proposal **#${proposal.id} ("${proposal.name}")** updated successfully!`
-          );
-          confirmedEmbed.setThumbnail(attachment.url);
-          await userMsg.reply({ embeds: [confirmedEmbed] }).catch(() => null);
-        } catch (downloadErr: any) {
-          console.error("[Upload] Error downloading/validating image:", downloadErr);
-          const failEmbed = createErrorEmbed(
-            "Invalid Image File",
-            downloadErr.message || "Failed to process image. Please upload a valid PNG, JPG, WEBP, or GIF under 10MB."
-          );
-          await userMsg.reply({ embeds: [failEmbed] }).catch(() => null);
-        }
-      }
-    } catch (collectorErr) {
-      console.log(`[Upload] Message collector timed out or stopped for proposal #${proposal.id}`);
-    }
     return;
   }
 

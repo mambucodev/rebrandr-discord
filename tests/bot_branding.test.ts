@@ -98,6 +98,6 @@ describe("Bot Branding Synchronization (Nickname & PFP)", () => {
     await rebrandService.syncBotBranding(mockGuild, undefined, testIconBuf);
 
     expect(mockGuild.client.user.setAvatar).toHaveBeenCalled();
-    expect(globalAvatarBuffer).toEqual(testIconBuf);
+    expect(globalAvatarBuffer as Buffer | null).toEqual(testIconBuf);
   });
 });

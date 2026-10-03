@@ -23,13 +23,13 @@ import {
   createErrorEmbed,
   createInfoEmbed,
   createForumTagConfigEmbedAndRows,
+  createScheduleEmbed,
 } from "../services/announcement";
 import { formatWeekendDate } from "../utils/dateUtils";
 
 export const rebrandAdminCommand = new SlashCommandBuilder()
   .setName("rebrand")
   .setDescription("Manage weekend rebrands, configuration, schedule, and overrides")
-  .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
   .addSubcommand((sub) =>
     sub
       .setName("config")
@@ -175,18 +175,20 @@ export async function handleRebrandAdminCommand(
     return;
   }
 
-  if (!hasAdminPermission(interaction)) {
+  const sub = interaction.options.getSubcommand();
+  const guildId = interaction.guild.id;
+  console.log(`[Admin] Command "/rebrand ${sub}" invoked by @${interaction.user.tag} in guild "${interaction.guild.name}" (${guildId})`);
+
+  // Subcommands strictly restricted to administrators or Manage Server permissions
+  const adminOnlySubcommands = ["config", "tags", "status", "set-default", "approve", "reject", "trigger"];
+  if (adminOnlySubcommands.includes(sub) && !hasAdminPermission(interaction)) {
     const errorEmbed = createErrorEmbed(
       "Permission Denied",
-      "You need **Administrator** or **Manage Server** permissions to run `/rebrand` admin commands."
+      `You need **Administrator** or **Manage Server** permissions to run \`/rebrand ${sub}\`.`
     );
     await interaction.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
     return;
   }
-
-  const sub = interaction.options.getSubcommand();
-  const guildId = interaction.guild.id;
-  console.log(`[Admin] Command "/rebrand ${sub}" invoked by @${interaction.user.tag} in guild "${interaction.guild.name}" (${guildId})`);
 
   switch (sub) {
     case "config": {
@@ -322,6 +324,18 @@ export async function handleRebrandAdminCommand(
       const name = interaction.options.getString("name");
       const topic = interaction.options.getString("topic");
 
+      const contentType = icon.contentType || "";
+      const isImage =
+        contentType.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(icon.name || "");
+      if (!isImage) {
+        const errEmbed = createErrorEmbed(
+          "Invalid Image File",
+          "Please upload a valid image file (**PNG, JPG, WEBP, or GIF**) for the server icon."
+        );
+        await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
+        return;
+      }
+
       if (!proposalId && interaction.channel?.isThread()) {
         const threadProposal = database.getProposalByThreadId(interaction.channel.id);
         if (threadProposal) proposalId = threadProposal.id;
@@ -330,7 +344,7 @@ export async function handleRebrandAdminCommand(
       if (!proposalId) {
         const errEmbed = createErrorEmbed(
           "Proposal ID Required",
-          "Specify the `id` option or run this command inside the proposal's forum thread."
+          "Specify the `id` option (e.g. `/rebrand upload icon:<file> id:123`) or run this command directly inside the proposal's forum thread."
         );
         await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
         return;
@@ -343,13 +357,16 @@ export async function handleRebrandAdminCommand(
         return;
       }
 
-      const isAuthor = proposal.user_id === interaction.user.id;
+      const isThreadOwner =
+        interaction.channel?.isThread() &&
+        (interaction.channel as ThreadChannel).ownerId === interaction.user.id;
+      const isAuthor = proposal.user_id === interaction.user.id || Boolean(isThreadOwner);
       const isAdmin = hasAdminPermission(interaction);
 
       if (!isAuthor && !isAdmin) {
         const errEmbed = createErrorEmbed(
           "Permission Denied",
-          "Only the proposal author or server administrators can upload icons."
+          "Only the proposal author or server administrators can upload icons for this proposal. If you'd like to suggest an icon, please use the **Suggest Asset** button in the thread!"
         );
         await interaction.reply({ embeds: [errEmbed], flags: MessageFlags.Ephemeral });
         return;
@@ -589,7 +606,7 @@ export async function handleRebrandAdminCommand(
 
     case "schedule": {
       const upcoming = database.getUpcomingSchedule(guildId);
-      const scheduleEmbed = rebrandService.getScheduleEmbed(upcoming);
+      const scheduleEmbed = createScheduleEmbed(upcoming, interaction.guild);
       await interaction.reply({ embeds: [scheduleEmbed] });
       break;
     }
@@ -599,21 +616,31 @@ export async function handleRebrandAdminCommand(
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       if (action === "apply") {
-        const result = await rebrandService.applyNextRebrand(interaction.guild);
-        if (result.success) {
-          const successEmbed = createSuccessEmbed("Rebrand Applied", result.message);
+        const nextProposal = database.getNextApprovedProposalInQueue(guildId);
+        if (!nextProposal) {
+          const errEmbed = createErrorEmbed("Trigger Failed", "No approved proposal found in queue to apply.");
+          await interaction.editReply({ embeds: [errEmbed] });
+          break;
+        }
+
+        const success = await rebrandService.applyRebrand(interaction.guild, nextProposal, true);
+        if (success) {
+          const successEmbed = createSuccessEmbed(
+            "Rebrand Applied",
+            `Applied proposal #${nextProposal.id} ("${nextProposal.name}") successfully.`
+          );
           await interaction.editReply({ embeds: [successEmbed] });
         } else {
-          const errEmbed = createErrorEmbed("Trigger Failed", result.message);
+          const errEmbed = createErrorEmbed("Trigger Failed", "Failed to apply rebrand to Discord server.");
           await interaction.editReply({ embeds: [errEmbed] });
         }
       } else {
-        const result = await rebrandService.revertToDefault(interaction.guild);
-        if (result.success) {
-          const successEmbed = createSuccessEmbed("Reverted to Baseline", result.message);
+        const success = await rebrandService.revertRebrand(interaction.guild, true);
+        if (success) {
+          const successEmbed = createSuccessEmbed("Reverted to Baseline", "Server restored to baseline defaults.");
           await interaction.editReply({ embeds: [successEmbed] });
         } else {
-          const errEmbed = createErrorEmbed("Trigger Failed", result.message);
+          const errEmbed = createErrorEmbed("Trigger Failed", "Failed to revert server to default baseline.");
           await interaction.editReply({ embeds: [errEmbed] });
         }
       }

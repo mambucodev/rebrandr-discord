@@ -24,11 +24,13 @@ Every weekend (Saturday 00:00 UTC to Sunday 23:59 UTC / Monday 00:00 UTC), the b
 
 ### Community Commands
 - `/propose <name> <icon> [topic]` — Propose a new weekend rebrand.
+- `/rebrand upload <icon> [id] [name] [topic]` — Upload and validate a custom server icon image for your proposal.
 - `/schedule` — View active and upcoming scheduled weekend rebrands.
 - `/proposals` — List pending proposals waiting for upvotes/approval.
 
 ### Admin / Owner Commands (`/rebrand`)
 - `/rebrand config [announcement_channel] [proposals_channel] [min_upvotes]` — Configure announcement/proposals channels and upvote requirement (default: 5).
+- `/rebrand upload <icon> [id] [name] [topic]` — Upload or override a custom server icon image for any proposal.
 - `/rebrand status` — View current bot configuration, baseline backup, and queue.
 - `/rebrand set-default [name] [icon]` — Set or capture the default baseline server name & icon.
 - `/rebrand approve <id>` — Approve a proposal and schedule it for an upcoming weekend.

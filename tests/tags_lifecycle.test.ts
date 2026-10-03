@@ -277,7 +277,7 @@ describe("Forum Tags Lifecycle & Moderator Untag Detection", () => {
     expect(rows.length).toBe(3);
 
     // Row 0: Rebrand tag select
-    const menu0 = rows[0].components[0] as any;
+    const menu0 = rows[0]?.components[0] as any;
     expect(menu0.data.custom_id).toBe("rebrand_tag_select:rebrand:forum-ui-test");
     const opt0Val = menu0.options[0]?.data?.value ?? menu0.options[0]?.value ?? menu0.data?.options?.[0]?.value;
     expect(opt0Val).toBe("clear");
@@ -285,11 +285,11 @@ describe("Forum Tags Lifecycle & Moderator Untag Detection", () => {
     expect(opt1Val).toBe("tag-1");
 
     // Row 1: Approved tag select
-    const menu1 = rows[1].components[0] as any;
+    const menu1 = rows[1]?.components[0] as any;
     expect(menu1.data.custom_id).toBe("rebrand_tag_select:approved:forum-ui-test");
 
     // Row 2: Declined tag select
-    const menu2 = rows[2].components[0] as any;
+    const menu2 = rows[2]?.components[0] as any;
     expect(menu2.data.custom_id).toBe("rebrand_tag_select:declined:forum-ui-test");
   });
 });

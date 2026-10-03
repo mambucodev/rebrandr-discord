@@ -1,7 +1,9 @@
 import {
   ThreadChannel,
   MessageReaction,
+  type PartialMessageReaction,
   User,
+  type PartialUser,
   Message,
   Collection,
 } from "discord.js";
@@ -306,7 +308,7 @@ export async function syncThreadProposal(
         try {
           const recent = await thread.messages.fetch({ limit: 5 });
           if (Array.isArray(recent) || (recent && Symbol.iterator in Object(recent))) {
-            const pinNotification = Array.from(recent as any).find((m: any) => m.type === 24 || (m as any).system);
+            const pinNotification = Array.from(recent as any).find((m: any) => m.type === 24 || (m as any).system) as any;
             if (pinNotification?.deletable) {
               await pinNotification.delete().catch(() => null);
             }
@@ -525,11 +527,27 @@ export async function handleThreadMessage(message: Message, db: RebrandDatabase 
 }
 
 export async function handleReactionEvent(
-  reaction: MessageReaction,
-  user: User,
+  reaction: MessageReaction | PartialMessageReaction,
+  user: User | PartialUser,
   db: RebrandDatabase = database
 ): Promise<void> {
   if (user.bot) return;
+
+  if (reaction.partial) {
+    try {
+      await reaction.fetch();
+    } catch {
+      return;
+    }
+  }
+
+  if (user.partial) {
+    try {
+      await user.fetch();
+    } catch {
+      return;
+    }
+  }
 
   const channel = reaction.message.channel;
   if (!channel.isThread()) return;
