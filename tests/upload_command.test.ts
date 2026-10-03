@@ -1,88 +1,31 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
-import fs from "fs";
-import path from "path";
-import { PermissionsBitField } from "discord.js";
+import { describe, it, expect, beforeEach } from "bun:test";
+import { PermissionFlagsBits, PermissionsBitField } from "discord.js";
 import { database } from "../src/database";
 import { rebrandAdminCommand, handleRebrandAdminCommand } from "../src/commands/admin";
+import { uploadCommand, handleUploadCommand } from "../src/commands/upload";
 import { handleInteraction } from "../src/handlers/interactionHandler";
 import { rebrandService } from "../src/services/rebrandService";
 import { getContainerText } from "../src/services/announcement";
 
-describe("Rebrand Upload Command & Upload Button Redesign", () => {
+describe("Rebrand Upload Command & Native Discord Permissions", () => {
   beforeEach(() => {
     (database as any).db.exec("DELETE FROM proposals;");
     (database as any).db.exec("DELETE FROM guild_settings;");
   });
 
-  it("ensures rebrand slash command has no default_member_permissions restriction", () => {
+  it("ensures rebrand slash command has default_member_permissions set to ManageGuild", () => {
     const json = rebrandAdminCommand.toJSON();
     expect(json.name).toBe("rebrand");
+    expect(json.default_member_permissions).toBe(String(PermissionFlagsBits.ManageGuild));
+  });
+
+  it("ensures upload slash command has no default_member_permissions restriction", () => {
+    const json = uploadCommand.toJSON();
+    expect(json.name).toBe("upload");
     expect(json.default_member_permissions).toBeUndefined();
   });
 
-  it("blocks non-administrators from running admin-only subcommands", async () => {
-    let replyPayload: any = null;
-    const interactionMock: any = {
-      guild: {
-        id: "guild-test-1",
-        name: "Test Guild",
-        ownerId: "guild-owner-user",
-      },
-      user: { id: "regular-user", tag: "regular#0001" },
-      memberPermissions: new PermissionsBitField([]),
-      options: {
-        getSubcommand: () => "config",
-      },
-      reply: async (payload: any) => {
-        replyPayload = payload;
-      },
-    };
-
-    await handleRebrandAdminCommand(interactionMock);
-
-    expect(replyPayload).not.toBeNull();
-    const text = getContainerText(replyPayload);
-    expect(text).toContain("Permission Denied");
-    expect(text).toContain("Administrator");
-  });
-
-  it("allows configured ADMIN_USER_ID to run admin-only subcommands even on servers they do not own or manage", async () => {
-    const originalEnv = process.env.ADMIN_USER_ID;
-    try {
-      process.env.ADMIN_USER_ID = "dev-admin-user";
-
-      let replyPayload: any = null;
-      const interactionMock: any = {
-        guild: {
-          id: "guild-foreign-1",
-          name: "Foreign Guild Not Owned",
-          ownerId: "someone-else-owner",
-          iconURL: () => null,
-        },
-        user: { id: "dev-admin-user", tag: "devadmin#0001" },
-        memberPermissions: new PermissionsBitField([]),
-        options: {
-          getSubcommand: () => "status",
-        },
-        reply: async (payload: any) => {
-          replyPayload = payload;
-        },
-      };
-
-      await handleRebrandAdminCommand(interactionMock);
-
-      expect(replyPayload).not.toBeNull();
-      // Should not be "Permission Denied"
-      const text = getContainerText(replyPayload);
-      expect(text).not.toContain("Permission Denied");
-      expect(text).toContain("Weekend Rebrand");
-    } finally {
-      process.env.ADMIN_USER_ID = originalEnv;
-    }
-  });
-
-  it("rejects non-image file uploads in /rebrand upload", async () => {
-
+  it("rejects non-image file uploads in /upload", async () => {
     let replyPayload: any = null;
     const interactionMock: any = {
       guild: {
@@ -93,7 +36,6 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
       user: { id: "author-user", tag: "author#0001" },
       memberPermissions: new PermissionsBitField([]),
       options: {
-        getSubcommand: () => "upload",
         getAttachment: (name: string) => ({
           name: "document.pdf",
           contentType: "application/pdf",
@@ -110,13 +52,13 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
       },
     };
 
-    await handleRebrandAdminCommand(interactionMock);
+    await handleUploadCommand(interactionMock);
 
     expect(replyPayload).not.toBeNull();
     expect(getContainerText(replyPayload)).toContain("Invalid Image File");
   });
 
-  it("requires proposal ID if /rebrand upload is run outside a thread without id", async () => {
+  it("requires proposal ID if /upload is run outside a thread without id", async () => {
     let replyPayload: any = null;
     const interactionMock: any = {
       guild: {
@@ -127,7 +69,6 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
       user: { id: "author-user", tag: "author#0001" },
       memberPermissions: new PermissionsBitField([]),
       options: {
-        getSubcommand: () => "upload",
         getAttachment: (name: string) => ({
           name: "logo.png",
           contentType: "image/png",
@@ -144,7 +85,7 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
       },
     };
 
-    await handleRebrandAdminCommand(interactionMock);
+    await handleUploadCommand(interactionMock);
 
     expect(replyPayload).not.toBeNull();
     expect(getContainerText(replyPayload)).toContain("Proposal ID Required");
@@ -167,7 +108,6 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
       user: { id: "random-member", tag: "random#0001" },
       memberPermissions: new PermissionsBitField([]),
       options: {
-        getSubcommand: () => "upload",
         getAttachment: (name: string) => ({
           name: "logo.png",
           contentType: "image/png",
@@ -184,7 +124,7 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
       },
     };
 
-    await handleRebrandAdminCommand(interactionMock);
+    await handleUploadCommand(interactionMock);
 
     expect(replyPayload).not.toBeNull();
     const text = getContainerText(replyPayload);
@@ -192,7 +132,7 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
     expect(text).toContain("Only the proposal author or server administrators");
   });
 
-  it("allows proposal authors to upload server icon with /rebrand upload", async () => {
+  it("allows proposal authors to upload server icon with /upload", async () => {
     const proposal = database.createProposal({
       guildId: "guild-test-1",
       userId: "author-user",
@@ -222,7 +162,6 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
         user: { id: "author-user", tag: "author#0001" },
         memberPermissions: new PermissionsBitField([]),
         options: {
-          getSubcommand: () => "upload",
           getAttachment: (name: string) => ({
             name: "flower.png",
             contentType: "image/png",
@@ -244,7 +183,7 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
         },
       };
 
-      await handleRebrandAdminCommand(interactionMock);
+      await handleUploadCommand(interactionMock);
 
       expect(deferred).toBe(true);
       expect(editPayload).not.toBeNull();
@@ -296,7 +235,7 @@ describe("Rebrand Upload Command & Upload Button Redesign", () => {
     expect(replyPayload).not.toBeNull();
     const text = getContainerText(replyPayload);
     expect(text).toContain("Upload Server Icon");
-    expect(text).toContain("/rebrand upload");
+    expect(text).toContain("/upload");
     expect(replyPayload.flags).toBeDefined();
   });
 });

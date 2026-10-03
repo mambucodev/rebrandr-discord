@@ -703,7 +703,7 @@ export function createProposalCarouselEmbed(
 
   const iconText = hasIcon
     ? "✅ Uploaded & Ready"
-    : "⚠️ Not Uploaded Yet *(Submitter can use `/rebrand upload`)*";
+    : "⚠️ Not Uploaded Yet *(Submitter can use `/upload`)*";
 
   const statusSection = `### Status: ${statusBadge}\n\n${
     proposal.topic ? `> *${proposal.topic}*` : `> *No theme description provided.*`

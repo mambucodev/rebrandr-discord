@@ -9,6 +9,7 @@ import { config } from "../config";
 import { proposeCommand, handleProposeCommand } from "./propose";
 import { scheduleCommand, handleScheduleCommand } from "./schedule";
 import { proposalsCommand, handleProposalsCommand } from "./proposals";
+import { uploadCommand, handleUploadCommand } from "./upload";
 import { rebrandAdminCommand, handleRebrandAdminCommand } from "./admin";
 import { helpCommand, handleHelpCommand } from "./help";
 
@@ -16,6 +17,7 @@ export const commands = [
   proposeCommand,
   scheduleCommand,
   proposalsCommand,
+  uploadCommand,
   rebrandAdminCommand,
   helpCommand,
 ];
@@ -83,6 +85,9 @@ export async function handleCommandInteraction(interaction: ChatInputCommandInte
       break;
     case "proposals":
       await handleProposalsCommand(interaction);
+      break;
+    case "upload":
+      await handleUploadCommand(interaction);
       break;
     case "rebrand":
       await handleRebrandAdminCommand(interaction);

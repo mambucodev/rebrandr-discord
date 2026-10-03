@@ -250,7 +250,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
     return;
   }
 
-  // Upload Icon button — instructs users to use /rebrand upload with attachment
+  // Upload Icon button — instructs users to use /upload with attachment
   if (action === "rebrand_upload_icon") {
     const proposal = database.getProposal(id);
     if (!proposal) {
@@ -276,8 +276,8 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
 
     const isInsideThread = interaction.channel?.isThread() && interaction.channel.id === proposal.thread_id;
     const commandText = isInsideThread
-      ? "`/rebrand upload icon:<file>`"
-      : `\`/rebrand upload icon:<file> id:${proposal.id}\``;
+      ? "`/upload icon:<file>`"
+      : `\`/upload icon:<file> id:${proposal.id}\``;
 
     const promptEmbed = new EmbedBuilder()
       .setTitle("📸 Upload Server Icon")
@@ -285,7 +285,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
         `To set or change the server icon for Proposal **#${proposal.id} ("${proposal.name}")**, please use the slash command:\n\n` +
         `>>> **${commandText}**\n\n` +
         `**Quick Steps:**\n` +
-        `1️⃣ Type \`/rebrand upload\` in chat\n` +
+        `1️⃣ Type \`/upload\` in chat\n` +
         `2️⃣ Attach your image file in the **\`icon\`** option (**PNG, JPG, WEBP, or GIF** up to 10MB)\n` +
         `3️⃣ Press **Enter** to submit!\n\n` +
         `*(The bot will automatically download, validate, cache, and update your proposal card!)*`

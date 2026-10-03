@@ -24,21 +24,19 @@ Every weekend (Saturday 00:00 UTC to Sunday 23:59 UTC / Monday 00:00 UTC), the b
 
 ### Community Commands
 - `/propose <name> <icon> [topic]` — Propose a new weekend rebrand.
-- `/rebrand upload <icon> [id] [name] [topic]` — Upload and validate a custom server icon image for your proposal.
+- `/upload <icon> [id] [name] [topic]` — Upload and validate a custom server icon image for your proposal.
 - `/schedule` — View active and upcoming scheduled weekend rebrands.
 - `/proposals browse` — Interactively browse pending proposals one at a time with navigation arrows and admin action buttons.
 - `/proposals list` — View all pending proposals categorized by readiness (Ready for Approval, Missing Assets, In Progress) with direct thread links.
 
-### Admin / Owner Commands (`/rebrand`)
-- `/rebrand config [announcement_channel] [proposals_channel] [min_upvotes]` — Configure announcement/proposals channels and upvote requirement (default: 5).
-- `/rebrand upload <icon> [id] [name] [topic]` — Upload or override a custom server icon image for any proposal.
+### Admin / Owner Commands (`/rebrand` - Requires Manage Server)
+- `/rebrand config [forum_channel] [logs_channel] [min_upvotes] [upvote_emojis] [downvote_emojis]` — Configure channels, voting goal, and custom server emojis.
+- `/rebrand tags [forum_channel]` — Configure forum status tags for rebrand, approved, and declined threads.
 - `/rebrand status` — View current bot configuration, baseline backup, and queue.
 - `/rebrand set-default [name] [icon]` — Set or capture the default baseline server name & icon.
-- `/rebrand approve <id>` — Approve a proposal and schedule it for an upcoming weekend.
-- `/rebrand reject <id> [reason]` — Reject a proposal.
-- `/rebrand apply <id>` — Manually apply a rebrand right now (force rebrand).
-- `/rebrand revert` — Manually revert back to default server name and icon immediately.
-- `/rebrand cancel <id>` — Cancel a scheduled proposal.
+- `/rebrand approve [id]` — Approve a proposal and schedule it for an upcoming weekend.
+- `/rebrand reject [id] [reason]` — Reject a proposal.
+- `/rebrand trigger <action>` — Instantly apply the next scheduled rebrand or revert back to baseline default.
 
 ---
 
